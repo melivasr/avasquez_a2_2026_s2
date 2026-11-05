@@ -1,11 +1,13 @@
 # ============================================================
 # Makefile - Proyecto ARQUI 2 (MLP 784-128-64-10, MNIST)
 #
-# Por ahora solo compila el modelo secuencial: main.cpp + lector.cpp
+# Compila el modelo secuencial (main.cpp + lector.cpp) y el
+# exportador de pesos iniciales (exportar_pesos.cpp).
 #
 # Uso:
 #   make          compila ./main
 #   make test     ejecuta ./main con 2 epocas (prueba rapida)
+#   make pesos    genera pesos_iniciales.bin (exportar_pesos)
 #   make clean
 #
 # Variables (se pueden sobreescribir):
@@ -27,9 +29,9 @@ endif
 # romperian la comparacion de checksums entre versiones.
 CXXFLAGS := -std=c++17 -O2 -Wall -Wextra -I$(EIGEN_INC) -I. $(EXTRA)
 
-.PHONY: all clean test
+.PHONY: all clean test pesos
 
-all: main
+all: main exportar_pesos
 
 lector.o: lector.cpp mnist.h
 	$(CXX) $(CXXFLAGS) -c $< -o $@
@@ -37,8 +39,14 @@ lector.o: lector.cpp mnist.h
 main: main.cpp lector.o mnist.h checksum.h
 	$(CXX) $(CXXFLAGS) $< lector.o -o $@
 
+exportar_pesos: exportar_pesos.cpp checksum.h
+	$(CXX) $(CXXFLAGS) $< -o $@
+
+pesos: exportar_pesos
+	./exportar_pesos pesos_iniciales.bin
+
 test: main
 	./main 2
 
 clean:
-	rm -f lector.o main
+	rm -f lector.o main exportar_pesos

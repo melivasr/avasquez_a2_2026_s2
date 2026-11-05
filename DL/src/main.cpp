@@ -7,6 +7,10 @@
 #include "mnist.h"
 #include <vector>
 
+// Para guardar pesos y sesgos en archivo.txt
+#include <iomanip>
+#include <fstream>
+
 using std::cout;
 
 using Eigen::VectorXd;
@@ -14,6 +18,12 @@ using Eigen::MatrixXd;
 
 double sigmoid(double z) {
     return 1.0 / (1.0 + std::exp(-z));
+}
+
+template <typename T>
+void guardar(const char* nombre, const T& dato) {
+    std::ofstream archivo(nombre);
+    archivo << std::setprecision(17) << dato;
 }
 
 int run(int argc, char** argv) {
@@ -25,7 +35,7 @@ int run(int argc, char** argv) {
 
     // n (\eta indica que tanto avanza en la direccion del gradiente)
     double learning_rate = 0.1;
-    const int num_muestras = dl::env_int("DL_SAMPLES", 100);
+    const int num_muestras = dl::env_int("DL_SAMPLES", 1000);
     const int epochs = (argc > 1) ? dl::integer(argv[1]) : 1000;
     double mse_promedio = 0.0;
     int conteo_clases[10] = {0};
@@ -80,7 +90,6 @@ int run(int argc, char** argv) {
 
     // =========================================
     // ENTRENAMIENTO SGD POR IMAGEN
-    // Mismo kernel por filas/columnas que CMP/SMT, en un hilo y sin barreras.
     // =========================================
 
     for (int epoch = 0; epoch < epochs; epoch++) {
@@ -179,6 +188,15 @@ int run(int argc, char** argv) {
             end - start
         );
 
+    guardar("../data/params/W1.txt", W1);
+    guardar("../data/params/b1.txt", b1.transpose());
+
+    guardar("../data/params/W2.txt", W2);
+    guardar("../data/params/b2.txt", b2.transpose());
+
+    guardar("../data/params/W3.txt", W3);
+    guardar("../data/params/b3.txt", b3.transpose());
+
     dl::finish(W1, b1, W2, b2, W3, b3);
     uint64_t h = CHECKSUM_INICIAL;
     h = hash_params(W1, h); h = hash_params(b1, h);
@@ -194,17 +212,6 @@ int run(int argc, char** argv) {
         cout << "Clase " << i << ": "
              << conteo_clases[i] << "\n";
     }
-
-    cout << "\n=== Pesos y sesgos finales ===\n";
-
-    cout << "W1:\n" << W1 << "\n";
-    cout << "b1:\n" << b1 << "\n";
-
-    cout << "W2:\n" << W2 << "\n";
-    cout << "b2:\n" << b2 << "\n";
-
-    cout << "W3:\n" << W3 << "\n";
-    cout << "b3:\n" << b3 << "\n";
     
     }
     cout << "\n=== Secuencial ===\n";
