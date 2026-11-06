@@ -108,6 +108,7 @@ struct Opciones {
     std::string pesos = "pesos_iniciales.bin";
     std::string datos = "../data/mnist";
     std::string volcar;
+    std::string vectores;   // prefijo de los .hex dorados para el RTL
     int cada = 1;
     int fw[3] = {20, 20, 20};
     Redondeo red = Redondeo::Cercano;
@@ -121,7 +122,7 @@ static void uso() {
         "Uso: ./emulador <double|float|fixed> <epocas> [opciones]\n"
         "     ./emulador --comparar A.bin B.bin\n"
         "     ./emulador --test-lut\n"
-        "Opciones: --n= --pesos= --datos= --volcar= --cada= --fw= --fw1=\n"
+        "Opciones: --n= --pesos= --datos= --volcar= --vectores= --cada= --fw= --fw1=\n"
         "          --fw2= --fw3= --redondeo=cercano|estocastico|piso\n"
         "          --semilla=\n";
 }
@@ -156,6 +157,7 @@ static bool parsear(int argc, char** argv, Opciones& op) {
         else if (clave == "pesos") op.pesos = val;
         else if (clave == "datos") op.datos = val;
         else if (clave == "volcar") op.volcar = val;
+        else if (clave == "vectores") op.vectores = val;
         else if (clave == "cada") op.cada = std::max(1, std::atoi(val.c_str()));
         else if (clave == "fw") op.fw[0] = op.fw[1] = op.fw[2] = std::atoi(val.c_str());
         else if (clave == "fw1") op.fw[0] = std::atoi(val.c_str());
@@ -453,6 +455,20 @@ struct CapaQ {
     std::vector<i32> b;   // n_out
 };
 
+// ---- Vectores dorados para el testbench del RTL ($readmemh) ----
+// Escribe v[0..n) como hex en complemento a 2 de "bits" bits, un valor por
+// linea (formato de $readmemh de Verilog).
+static bool volcar_hex(const std::string& ruta, const i32* v, size_t n, int bits) {
+    std::FILE* f = std::fopen(ruta.c_str(), "w");
+    if (!f) { std::cerr << "No se pudo escribir " << ruta << "\n"; return false; }
+    const uint32_t mask = (bits >= 32) ? 0xFFFFFFFFu : ((1u << bits) - 1u);
+    const int dig = (bits + 3) / 4;
+    for (size_t i = 0; i < n; i++)
+        std::fprintf(f, "%0*x\n", dig, (unsigned)((uint32_t)v[i] & mask));
+    std::fclose(f);
+    return true;
+}
+
 static CapaQ cuantizar(const MatrixXd& W, const MatrixXd& b, int fw, uint64_t& sat_cnt,
                        double& max_err) {
     CapaQ c;
@@ -473,8 +489,19 @@ static CapaQ cuantizar(const MatrixXd& W, const MatrixXd& b, int fw, uint64_t& s
     return c;
 }
 
+// Pesos y sesgos de las 3 capas (W en orden FILA, igual que el RTL) con
+// sufijo "pre" (antes de actualizar) o "post" (despues).
+static void volcar_capas(const std::string& pref, const char* suf, const CapaQ* c) {
+    for (int l = 0; l < 3; l++) {
+        const std::string n = std::to_string(l + 1);
+        volcar_hex(pref + "_W" + n + "_" + suf + ".hex", c[l].W.data(), c[l].W.size(), BITS_W);
+        volcar_hex(pref + "_b" + n + "_" + suf + ".hex", c[l].b.data(), c[l].b.size(), BITS_W);
+    }
+}
+
 // MATVEC + SIGMOID: a_out = sigmoide(W*a_in + b)
-static void matvec_sigmoide(const CapaQ& c, const i32* a_in, i32* a_out, Estad& st) {
+static void matvec_sigmoide(const CapaQ& c, const i32* a_in, i32* a_out, Estad& st,
+                            i32* z_out = nullptr) {
     for (int j = 0; j < c.n_out; j++) {
         i64 acc = (i64)c.b[j] << 16;                   // F = fw+16
         const i32* fila = &c.W[(size_t)j * c.n_in];
@@ -482,6 +509,7 @@ static void matvec_sigmoide(const CapaQ& c, const i32* a_in, i32* a_out, Estad& 
         st.max_acc_fwd = std::max<i64>(st.max_acc_fwd, acc < 0 ? -acc : acc);
         acc = sat(acc, 48, st.sat_acc);
         i64 z = sat(rsh(acc, c.fw + 4), 16, st.sat_z); // a Q4.12
+        if (z_out) z_out[j] = (i32)z;                  // solo para volcar vectores
         a_out[j] = lut_sigmoide((i32)z);
     }
 }
@@ -593,6 +621,14 @@ static Resultado entrenar_fixed(const Opciones& op, const PesosD& p0,
     const int num_muestras = (int)mq.size();
     std::vector<i32> a1(N_H1), a2(N_H2), a3(N_OUT);
     std::vector<i32> dz3(N_OUT), dz2(N_H2), dz1(N_H1);
+    std::vector<i32> z1(N_H1), z2(N_H2), z3(N_OUT);   // Q4.12, solo para vectores
+    const std::string& pv = op.vectores;
+    if (!pv.empty()) {
+        volcar_hex(pv + "_lut.hex", LUT, 1025, 16);
+        std::printf("# vectores dorados (imagen 0, epoca 0) con prefijo '%s'\n", pv.c_str());
+    }
+    // Traza de DELTA_OUT: una linea por imagen y epoca (ver formato abajo).
+    std::FILE* ftr = pv.empty() ? nullptr : std::fopen((pv + "_delta.hex").c_str(), "w");
 
     auto start = std::chrono::steady_clock::now();
 
@@ -602,13 +638,24 @@ static Resultado entrenar_fixed(const Opciones& op, const PesosD& p0,
 
         for (int i = 0; i < num_muestras; i++) {
             const MuestraQ& m = mq[i];
+            const bool cap = !pv.empty() && epoch == 0 && i == 0;   // 1a imagen
+            if (cap) {
+                volcar_capas(pv, "pre", c);
+                volcar_hex(pv + "_x.hex", m.x.data(), N_IN, 16);
+            }
 
             // ---- forward (LOADX ya hecho: m.x en Q0.16) ----
-            matvec_sigmoide(c[0], m.x.data(), a1.data(), st);
-            matvec_sigmoide(c[1], a1.data(), a2.data(), st);
-            matvec_sigmoide(c[2], a2.data(), a3.data(), st);
+            matvec_sigmoide(c[0], m.x.data(), a1.data(), st, z1.data());
+            matvec_sigmoide(c[1], a1.data(), a2.data(), st, z2.data());
+            matvec_sigmoide(c[2], a2.data(), a3.data(), st, z3.data());
+            if (cap) {
+                volcar_hex(pv + "_z1.hex", z1.data(), N_H1, 16);  volcar_hex(pv + "_a1.hex", a1.data(), N_H1, 16);
+                volcar_hex(pv + "_z2.hex", z2.data(), N_H2, 16);  volcar_hex(pv + "_a2.hex", a2.data(), N_H2, 16);
+                volcar_hex(pv + "_z3.hex", z3.data(), N_OUT, 16); volcar_hex(pv + "_a3.hex", a3.data(), N_OUT, 16);
+            }
 
             // ---- DELTA_OUT: dZ3 = (2/10)(a3-y) a3(1-a3), MSE y acierto ----
+            const i64 e2_antes = e2_total;      // para aislar el e^2 de ESTA imagen
             int pred = 0;
             for (int k = 0; k < N_OUT; k++) {
                 i64 y = (k == m.etiqueta) ? 65536 : 0;
@@ -619,15 +666,36 @@ static Resultado entrenar_fixed(const Opciones& op, const PesosD& p0,
                 if (a3[k] > a3[pred]) pred = k;                           // 1er maximo
             }
             if (pred == m.etiqueta) aciertos++;
+            // Formato de cada linea (hex, primer campo = bits mas altos, 112 digitos):
+            //   etiqueta(2) pred(1) e2(9, F32) dz3[0..9](6 c/u, 24 bits) a3[0..9](4 c/u, Q0.16)
+            if (ftr) {
+                std::fprintf(ftr, "%02x%x%09llx", m.etiqueta, pred,
+                             (unsigned long long)(e2_total - e2_antes));
+                for (int k = 0; k < N_OUT; k++)
+                    std::fprintf(ftr, "%06x", (unsigned)((uint32_t)dz3[k] & 0xFFFFFFu));
+                for (int k = 0; k < N_OUT; k++)
+                    std::fprintf(ftr, "%04x", (unsigned)a3[k]);
+                std::fprintf(ftr, "\n");
+            }
+            if (cap) {
+                volcar_hex(pv + "_dz3.hex", dz3.data(), N_OUT, 24);
+                const i32 et = m.etiqueta;
+                volcar_hex(pv + "_etiqueta.hex", &et, 1, 8);
+            }
 
             // ---- backprop con los pesos VIEJOS (antes de actualizar) ----
             matvec_t_deriv(c[2], dz3.data(), a2.data(), dz2.data(), st);
             matvec_t_deriv(c[1], dz2.data(), a1.data(), dz1.data(), st);
+            if (cap) {
+                volcar_hex(pv + "_dz2.hex", dz2.data(), N_H2, 24);
+                volcar_hex(pv + "_dz1.hex", dz1.data(), N_H1, 24);
+            }
 
             // ---- actualizacion: W3, W2, W1 ----
             actualizar(c[2], dz3.data(), a2.data(), op.red, lfsr[2], st, 2);
             actualizar(c[1], dz2.data(), a1.data(), op.red, lfsr[1], st, 1);
             actualizar(c[0], dz1.data(), m.x.data(), op.red, lfsr[0], st, 0);
+            if (cap) volcar_capas(pv, "post", c);
         }
 
         double mse_promedio = (double)e2_total / 4294967296.0 / N_OUT / num_muestras;
@@ -642,6 +710,8 @@ static Resultado entrenar_fixed(const Opciones& op, const PesosD& p0,
 
     Resultado r;
     r.us = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+
+    if (ftr) std::fclose(ftr);
 
     // Hash de enteros (formato canonico del encabezado)
     uint64_t h = CHECKSUM_INICIAL;

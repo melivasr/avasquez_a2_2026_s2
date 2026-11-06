@@ -31,7 +31,13 @@ CXXFLAGS := -std=c++17 -O2 -Wall -Wextra -I$(EIGEN_INC) -I. $(EXTRA)
 
 .PHONY: all clean test pesos
 
-all: main exportar_pesos
+all: main exportar_pesos emulador
+
+emulador: emulador.cpp lector.o mnist.h checksum.h
+	$(CXX) $(CXXFLAGS) $< lector.o -o $@
+
+clean:
+	rm -f lector.o main exportar_pesos emulador
 
 lector.o: lector.cpp mnist.h
 	$(CXX) $(CXXFLAGS) -c $< -o $@
@@ -47,6 +53,3 @@ pesos: exportar_pesos
 
 test: main
 	./main 2
-
-clean:
-	rm -f lector.o main exportar_pesos
