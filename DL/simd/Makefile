@@ -9,8 +9,12 @@ else
   EIGEN_INC ?= /usr/include/eigen3
 endif
 
+# SRC: codigo del secuencial (lector, checksum, runtime) que se reutiliza.
+# SRC_DIR / INC_DIR: fuentes (.cpp) y cabeceras (.h) propias de la version SIMD.
 SRC := ../src
-CXXFLAGS := -std=c++17 -O2 -Wall -Wextra -isystem $(EIGEN_INC) -I$(SRC) $(EXTRA)
+SRC_DIR := src
+INC_DIR := include
+CXXFLAGS := -std=c++17 -O2 -Wall -Wextra -isystem $(EIGEN_INC) -I$(INC_DIR) -I$(SRC) $(EXTRA)
 SIMDFLAGS := -mavx2 -mno-fma -ffp-contract=off
 
 .PHONY: all clean test validar
@@ -22,12 +26,13 @@ lector_simd.o: $(SRC)/lector.cpp $(SRC)/mnist.h
 # Un objeto por modulo.
 OBJS := main_simd.o entrenamiento.o capas.o kernels_avx2.o lector_simd.o
 
-kernels_avx2.o:  kernels_avx2.cpp kernels_avx2.h
-capas.o: capas.cpp capas.h kernels_avx2.h
-entrenamiento.o: entrenamiento.cpp entrenamiento.h capas.h kernels_avx2.h $(SRC)/mnist.h
-main_simd.o: main_simd.cpp entrenamiento.h $(SRC)/mnist.h $(SRC)/checksum.h $(SRC)/runtime.h
+kernels_avx2.o: $(SRC_DIR)/kernels_avx2.cpp $(INC_DIR)/kernels_avx2.h
+capas.o: $(SRC_DIR)/capas.cpp $(INC_DIR)/capas.h $(INC_DIR)/kernels_avx2.h
+entrenamiento.o: $(SRC_DIR)/entrenamiento.cpp $(INC_DIR)/entrenamiento.h $(INC_DIR)/capas.h $(INC_DIR)/kernels_avx2.h $(SRC)/mnist.h
+main_simd.o: $(SRC_DIR)/main_simd.cpp $(INC_DIR)/entrenamiento.h $(SRC)/mnist.h $(SRC)/checksum.h $(SRC)/runtime.h
 
-%.o: %.cpp
+# Los objetos y el binario quedan en DL/simd/ (el binario usa ../data/mnist/).
+%.o: $(SRC_DIR)/%.cpp
 	$(CXX) $(CXXFLAGS) $(SIMDFLAGS) -flto -c $< -o $@
 
 main_simd: $(OBJS)
