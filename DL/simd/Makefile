@@ -27,9 +27,11 @@ capas.o: capas.cpp capas.h kernels_avx2.h
 entrenamiento.o: entrenamiento.cpp entrenamiento.h capas.h kernels_avx2.h $(SRC)/mnist.h
 main_simd.o: main_simd.cpp entrenamiento.h $(SRC)/mnist.h $(SRC)/checksum.h $(SRC)/runtime.h
 
-%.o: %.cpp $(CXX) $(CXXFLAGS) $(SIMDFLAGS) -flto -c $< -o $@
+%.o: %.cpp
+	$(CXX) $(CXXFLAGS) $(SIMDFLAGS) -flto -c $< -o $@
 
-main_simd: $(OBJS) $(CXX) $(CXXFLAGS) $(SIMDFLAGS) -flto $(OBJS) -o $@
+main_simd: $(OBJS)
+	$(CXX) $(CXXFLAGS) $(SIMDFLAGS) -flto $(OBJS) -o $@
 
 # Numero de epocas para test y validar. Se cambia en la terminal:
 # make test EPOCAS=20
