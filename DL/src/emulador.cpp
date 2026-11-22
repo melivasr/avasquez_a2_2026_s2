@@ -114,6 +114,8 @@ struct Opciones {
     Redondeo red = Redondeo::Cercano;
     uint32_t semilla = 1;
     bool test_lut = false;
+    bool test_bw = false;   // autoprueba sintetica de MATVEC_T + DERIV
+    int caso = 0;           // caso de datos de la autoprueba (0..3)
     std::string cmp_a, cmp_b;
 };
 
@@ -122,6 +124,7 @@ static void uso() {
         "Uso: ./emulador <double|float|fixed> <epocas> [opciones]\n"
         "     ./emulador --comparar A.bin B.bin\n"
         "     ./emulador --test-lut\n"
+        "     ./emulador --test-backward --caso=0..3 --semilla=N --vectores=PREF\n"
         "Opciones: --n= --pesos= --datos= --volcar= --vectores= --cada= --fw= --fw1=\n"
         "          --fw2= --fw3= --redondeo=cercano|estocastico|piso\n"
         "          --semilla=\n";
@@ -153,6 +156,8 @@ static bool parsear(int argc, char** argv, Opciones& op) {
             op.cmp_a = argv[++i];
             op.cmp_b = argv[++i];
         } else if (clave == "test-lut") op.test_lut = true;
+        else if (clave == "test-backward") op.test_bw = true;
+        else if (clave == "caso") op.caso = std::atoi(val.c_str());
         else if (clave == "n") op.n = std::atoi(val.c_str());
         else if (clave == "pesos") op.pesos = val;
         else if (clave == "datos") op.datos = val;
@@ -515,8 +520,11 @@ static void matvec_sigmoide(const CapaQ& c, const i32* a_in, i32* a_out, Estad& 
 }
 
 // MATVEC_T + DERIV: dz_prev = (W^T * dz) .* a_prev(1-a_prev)
+// da_out (opcional): dA[k] en Q2.22 tras rsh+sat24, ANTES de multiplicar por
+// a(1-a). Solo se usa para volcar vectores dorados (aisla el arbol sumador
+// y su redondeo de la etapa DERIV).
 static void matvec_t_deriv(const CapaQ& c, const i32* dz, const i32* a_prev,
-                           i32* dz_prev, Estad& st) {
+                           i32* dz_prev, Estad& st, i32* da_out = nullptr) {
     std::vector<i64> acc(c.n_in, 0);
     for (int j = 0; j < c.n_out; j++) {
         const i32* fila = &c.W[(size_t)j * c.n_in];
@@ -525,6 +533,7 @@ static void matvec_t_deriv(const CapaQ& c, const i32* dz, const i32* a_prev,
     for (int k = 0; k < c.n_in; k++) {
         st.max_acc_bwd = std::max<i64>(st.max_acc_bwd, acc[k] < 0 ? -acc[k] : acc[k]);
         i64 da = sat(rsh(acc[k], c.fw), 24, st.sat_dz);                    // Q2.22
+        if (da_out) da_out[k] = (i32)da;                                   // solo vectores
         i64 s = rsh((i64)a_prev[k] * (65536 - a_prev[k]), 16);             // a(1-a), F16
         dz_prev[k] = (i32)sat(rsh(da * s, 16), 24, st.sat_dz);             // Q2.22
     }
@@ -622,6 +631,7 @@ static Resultado entrenar_fixed(const Opciones& op, const PesosD& p0,
     std::vector<i32> a1(N_H1), a2(N_H2), a3(N_OUT);
     std::vector<i32> dz3(N_OUT), dz2(N_H2), dz1(N_H1);
     std::vector<i32> z1(N_H1), z2(N_H2), z3(N_OUT);   // Q4.12, solo para vectores
+    std::vector<i32> da2(N_H2), da1(N_H1);            // Q2.22, solo para vectores
     const std::string& pv = op.vectores;
     if (!pv.empty()) {
         volcar_hex(pv + "_lut.hex", LUT, 1025, 16);
@@ -684,9 +694,11 @@ static Resultado entrenar_fixed(const Opciones& op, const PesosD& p0,
             }
 
             // ---- backprop con los pesos VIEJOS (antes de actualizar) ----
-            matvec_t_deriv(c[2], dz3.data(), a2.data(), dz2.data(), st);
-            matvec_t_deriv(c[1], dz2.data(), a1.data(), dz1.data(), st);
+            matvec_t_deriv(c[2], dz3.data(), a2.data(), dz2.data(), st, da2.data());
+            matvec_t_deriv(c[1], dz2.data(), a1.data(), dz1.data(), st, da1.data());
             if (cap) {
+                volcar_hex(pv + "_dA2.hex", da2.data(), N_H2, 24);   // v3: antes de a(1-a)
+                volcar_hex(pv + "_dA1.hex", da1.data(), N_H1, 24);
                 volcar_hex(pv + "_dz2.hex", dz2.data(), N_H2, 24);
                 volcar_hex(pv + "_dz1.hex", dz1.data(), N_H1, 24);
             }
@@ -752,6 +764,136 @@ static Resultado entrenar_fixed(const Opciones& op, const PesosD& p0,
 }
 
 // ============================================================
+// AUTOPRUEBA SINTETICA de MATVEC_T + DERIV  (--test-backward)
+//
+// El entrenamiento real NUNCA satura dA (max|dA| ~ 3.4e5 contra el limite
+// 8388607), asi que sus vectores no ejercitan el saturador ni el peor caso
+// del acumulador. Aqui se generan, con un PRNG propio y determinista
+// (splitmix64, igual en Mac y Linux), pesos W, gradientes dz y activaciones a
+// SINTETICOS, y se pasan por la MISMA funcion matvec_t_deriv() que usa el
+// entrenamiento. Se vuelcan, por capa (c3: W3 10x64 ; c2: W2 64x128):
+//   PREF_c3_W.hex  PREF_c3_dz.hex  PREF_c3_a.hex   (entradas)
+//   PREF_c3_dA.hex PREF_c3_dzp.hex                 (salidas esperadas)
+//   y lo mismo con c2.   W,dz,dA,dzp: 24 bits ; a: 16 bits (Q0.16)
+// Casos (--caso=):
+//   0 realista : W en +-0.5, dz en +-0.06            (sin saturar)
+//   1 rango completo : W y dz uniformes en todo el rango de 24 bits (satura mucho)
+//   2 extremos : dz = -2^23 en todas las filas, W en {-2^23, 2^23-1};
+//                columna 0 = todo -2^23 (acc maximo +n*2^46), columna 1 = todo
+//                2^23-1 (acc minimo). Prueba el ancho del acumulador.
+//   3 bordes   : columnas que caen justo a ambos lados del umbral de
+//                saturacion de dA (+-2^23) y del redondeo de rsh().
+// 'a' siempre incluye los bordes 0, 1, 16383..16384, 32767..32769, 65534, 65535.
+// Con --semilla=N se generan juegos distintos del mismo caso.
+// ============================================================
+struct Sm64 {
+    uint64_t s;
+    uint64_t next() {
+        uint64_t z = (s += 0x9E3779B97F4A7C15ULL);
+        z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
+        z = (z ^ (z >> 27)) * 0x94D049BB133111EBULL;
+        return z ^ (z >> 31);
+    }
+    i64 rango(i64 lo, i64 hi) { return lo + (i64)(next() % (uint64_t)(hi - lo + 1)); }
+};
+
+static int test_backward(const Opciones& op) {
+    if (op.vectores.empty()) { std::cerr << "--test-backward requiere --vectores=PREF\n"; return 1; }
+    if (op.caso < 0 || op.caso > 3) { std::cerr << "--caso debe estar entre 0 y 3\n"; return 1; }
+    for (int l = 0; l < 3; l++)
+        if (op.fw[l] < 8 || op.fw[l] > 22) { std::cerr << "fw debe estar entre 8 y 22\n"; return 1; }
+
+    const i64 WMAX = ((i64)1 << 23) - 1, WMIN = -((i64)1 << 23);
+    const int a_borde[12] = {0, 1, 2, 16383, 16384, 32767, 32768, 32769, 49151, 49152, 65534, 65535};
+    // lista de bordes del caso 3 (ver comentario de cabecera)
+    const i64 w0_borde[6] = {(1 << 21) - 2, (1 << 21) - 1, (1 << 21),
+                             -(1 << 21) + 1, -(1 << 21), -(1 << 21) - 1};
+    const i64 w1_borde[10] = {0, (1 << 19) - 1, (1 << 19), -(1 << 19), -(1 << 19) - 1,
+                              (3 << 20), (3 << 20) + (1 << 19) - 1, (3 << 20) + (1 << 19),
+                              -(3 << 20) - (1 << 19), -(3 << 20) - (1 << 19) - 1};
+
+    const int capa_n[2]   = {3, 2};
+    const int n_out_l[2]  = {N_OUT, N_H2};   // c3: 10 x 64 ; c2: 64 x 128
+    const int n_in_l[2]   = {N_H2, N_H1};
+    Estad st;
+
+    for (int t = 0; t < 2; t++) {
+        const int n_out = n_out_l[t], n_in = n_in_l[t];
+        Sm64 rng{(uint64_t)op.semilla * 1000003ULL + (uint64_t)op.caso * 7919ULL +
+                 (uint64_t)t * 104729ULL + 12345ULL};
+        CapaQ c;
+        c.n_out = n_out; c.n_in = n_in; c.fw = op.fw[capa_n[t] - 1];
+        c.W.assign((size_t)n_out * n_in, 0);
+        c.b.assign(n_out, 0);
+        std::vector<i32> dz(n_out), a(n_in), da(n_in), dzp(n_in);
+        auto W = [&](int j, int k) -> i32& { return c.W[(size_t)j * n_in + k]; };
+        auto ext = [&]() -> i32 { return (i32)((rng.next() & 1) ? WMAX : WMIN); };
+
+        for (int k = 0; k < n_in; k++)
+            a[k] = (i32)((op.caso == 3 || k < 12) ? a_borde[k % 12] : rng.rango(0, 65535));
+
+        switch (op.caso) {
+        case 0:
+            for (int j = 0; j < n_out; j++) {
+                dz[j] = (i32)rng.rango(-(1 << 18), (1 << 18) - 1);
+                for (int k = 0; k < n_in; k++) W(j, k) = (i32)rng.rango(-(1 << 20), (1 << 20) - 1);
+            }
+            break;
+        case 1:
+            for (int j = 0; j < n_out; j++) {
+                dz[j] = (i32)rng.rango(WMIN, WMAX);
+                for (int k = 0; k < n_in; k++) W(j, k) = (i32)rng.rango(WMIN, WMAX);
+            }
+            break;
+        case 2:
+            for (int j = 0; j < n_out; j++) {
+                dz[j] = (i32)WMIN;
+                for (int k = 0; k < n_in; k++) W(j, k) = ext();
+                W(j, 0) = (i32)WMIN;       // producto +2^46 en todas las filas
+                W(j, 1) = (i32)WMAX;       // producto -(2^23)(2^23-1) en todas
+            }
+            break;
+        default:   // caso 3: acc = W[0][k]*2^22 + W[1][k]*1  -> dA = W0*4 + rsh(W1,20)
+            for (int j = 0; j < n_out; j++) {
+                dz[j] = (j == 0) ? (1 << 22) : (j == 1 ? 1 : 0);   // filas >= 2 aportan 0
+                for (int k = 0; k < n_in; k++) W(j, k) = (i32)rng.rango(WMIN, WMAX);
+            }
+            for (int k = 0; k < 60 && k < n_in; k++) {            // 6 x 10 combinaciones
+                W(0, k) = (i32)w0_borde[k / 10];
+                W(1, k) = (i32)w1_borde[k % 10];
+            }
+            break;
+        }
+
+        matvec_t_deriv(c, dz.data(), a.data(), dzp.data(), st, da.data());
+
+        // ---- cobertura: recalculo del acumulador y del umbral de saturacion ----
+        int n_pos = 0, n_neg = 0, n_borde = 0;
+        i64 max_acc = 0;
+        for (int k = 0; k < n_in; k++) {
+            i64 acc = 0;
+            for (int j = 0; j < n_out; j++) acc += (i64)W(j, k) * dz[j];
+            max_acc = std::max<i64>(max_acc, acc < 0 ? -acc : acc);
+            const i64 d = rsh(acc, c.fw);
+            if (d > WMAX) n_pos++; else if (d < WMIN) n_neg++;
+            if (d == WMAX || d == WMIN) n_borde++;
+        }
+        const std::string n = std::to_string(capa_n[t]);
+        const std::string p = op.vectores + "_c" + n;
+        volcar_hex(p + "_W.hex",   c.W.data(), c.W.size(), 24);
+        volcar_hex(p + "_dz.hex",  dz.data(),  dz.size(),  24);
+        volcar_hex(p + "_a.hex",   a.data(),   a.size(),   16);
+        volcar_hex(p + "_dA.hex",  da.data(),  da.size(),  24);
+        volcar_hex(p + "_dzp.hex", dzp.data(), dzp.size(), 24);
+        std::printf("# caso %d semilla %u  c%s (%dx%d, fw=%d): dA satura +:%d -:%d  en borde exacto:%d  "
+                    "max|acc| = %d bits con signo\n",
+                    op.caso, op.semilla, n.c_str(), n_out, n_in, c.fw, n_pos, n_neg, n_borde,
+                    bits_con_signo(max_acc));
+    }
+    return 0;
+}
+
+// ============================================================
 // main
 // ============================================================
 int main(int argc, char** argv) {
@@ -760,6 +902,7 @@ int main(int argc, char** argv) {
 
     if (op.test_lut) return test_lut();
     if (!op.cmp_a.empty()) return comparar(op.cmp_a, op.cmp_b);
+    if (op.test_bw) return test_backward(op);
 
     if (op.modo != "double" && op.modo != "float" && op.modo != "fixed") { uso(); return 1; }
     for (int l = 0; l < 3; l++) {

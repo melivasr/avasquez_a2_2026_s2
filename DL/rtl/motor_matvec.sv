@@ -199,10 +199,13 @@ module motor_matvec #(
                 .clk(clk),
                 .w_we(we_w),  .w_waddr(w_addr_lane), .w_wdata(w_data),
                 .b_we(we_b),  .b_waddr(b_pass),      .b_wdata(b_data),
+                // ---- puertos del backward: sin uso en este motor (solo forward) ----
+                .dz_we(1'b0), .dz_waddr('0), .dz_wdata(24'sd0),
+                .dsel('0), .bw(1'b0), .row_ok(1'b1),
                 .raddr(raddr), .bsel(pass),
                 .load_bias(load_bias), .mac_en(v2),
                 .a_q(x_q),
-                .z_out(z)
+                .z_out(z), .prod_out()
             );
 
             assign z_lane[g*16 +: 16] = z;

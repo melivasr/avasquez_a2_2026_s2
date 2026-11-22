@@ -438,3 +438,4 @@ src/main
 src/emulador
 src/exportar_pesos
 *.o
+*.hex
