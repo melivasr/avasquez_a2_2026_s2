@@ -1,0 +1,59 @@
+GPU: AMD Radeon Graphics (radeonsi, renoir, ACO, DRM 3.64, 7.0.0-38-generic) | precision: float (fp32)
+AVISO: en fp32 el resultado NO sera bit a bit igual al baseline (double); comparar por diferencia numerica, MSE y accuracy.
+Work-group: P=128 hilos (max 512), G=100 imagenes por kernel
+ep 0 start 0 us 79538
+ep 0 start 100 us 76323
+ep 0 start 200 us 75439
+ep 0 start 300 us 75266
+ep 0 start 400 us 74996
+ep 0 start 500 us 75143
+ep 0 start 600 us 74866
+ep 0 start 700 us 75732
+ep 0 start 800 us 75036
+ep 0 start 900 us 75443
+ep 1 start 0 us 74693
+ep 1 start 100 us 75022
+ep 1 start 200 us 75023
+ep 1 start 300 us 75089
+ep 1 start 400 us 74979
+ep 1 start 500 us 77181
+ep 1 start 600 us 75569
+ep 1 start 700 us 77013
+ep 1 start 800 us 76079
+ep 1 start 900 us 79800
+ep 2 start 0 us 77571
+ep 2 start 100 us 75448
+ep 2 start 200 us 80263
+ep 2 start 300 us 75977
+ep 2 start 400 us 75439
+ep 2 start 500 us 75129
+ep 2 start 600 us 74865
+ep 2 start 700 us 75049
+ep 2 start 800 us 76907
+ep 2 start 900 us 76942
+ep 3 start 0 us 76916
+ep 3 start 100 us 76993
+ep 3 start 200 us 77155
+ep 3 start 300 us 76326
+ep 3 start 400 us 77378
+ep 3 start 500 us 76492
+ep 3 start 600 us 76357
+ep 3 start 700 us 76814
+ep 3 start 800 us 76311
+ep 3 start 900 us 77537
+ep 4 start 0 us 76360
+ep 4 start 100 us 76203
+ep 4 start 200 us 76350
+ep 4 start 300 us 76199
+ep 4 start 400 us 76308
+ep 4 start 500 us 76399
+ep 4 start 600 us 76025
+ep 4 start 700 us 76928
+ep 4 start 800 us 76715
+ep 4 start 900 us 76802
+
+Checksum parametros: ec9a14cafce0bd49
+
+=== GPU OpenCL (AMD Radeon Graphics (radeonsi, renoir, ACO, DRM 3.64, 7.0.0-38-generic)) ===
+
+Tiempo total: 3815521 us

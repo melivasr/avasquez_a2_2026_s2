@@ -44,7 +44,6 @@
 #include "runtime.h"
 #include "mnist.h"
 
-// checksum.h lo provee el profesor. Si no esta, se usa un FNV-1a equivalente
 // (solo para poder compilar; el valor no sera comparable con el del baseline).
 #if __has_include("checksum.h")
 #include "checksum.h"
@@ -323,7 +322,15 @@ int run(int argc, char** argv) {
             int count = std::min(G, num_muestras - start);
             CK(clSetKernelArg(kern, 16, sizeof(int), &start));
             CK(clSetKernelArg(kern, 17, sizeof(int), &count));
+            auto l0 = std::chrono::steady_clock::now();
             CK(clEnqueueNDRangeKernel(q, kern, 1, nullptr, &gsz, &lsz, 0, nullptr, nullptr));
+            if (std::getenv("DL_SYNC")) {
+                CK(clFinish(q));
+                if (std::getenv("DL_TRACE"))
+                    std::cerr << "ep " << e << " start " << start << " us "
+                            << std::chrono::duration_cast<std::chrono::microseconds>(
+                                    std::chrono::steady_clock::now() - l0).count() << "\n";
+            }
         }
     }
     CK(clFinish(q));
