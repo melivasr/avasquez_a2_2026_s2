@@ -84,6 +84,13 @@ module tb_matvec;
         $readmemh(F_Z, ztab);
         $readmemh(F_A, atab);
 
+        if ((^wtab[0] === 1'bx) || (^wtab[N_OUT*N_IN-1] === 1'bx) ||
+            (^btab[0] === 1'bx) || (^xtab[N_IN-1] === 1'bx) ||
+            (^ztab[N_OUT-1] === 1'bx) || (^atab[N_OUT-1] === 1'bx)) begin
+            $display("FALLO: no se cargaron los .hex (revisar nombres y carpeta)");
+            $finish;
+        end
+
         repeat (4) @(posedge clk);
         rst = 0;
         repeat (2) @(posedge clk);
