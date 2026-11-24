@@ -1,0 +1,1 @@
+estocastico 20 20 20

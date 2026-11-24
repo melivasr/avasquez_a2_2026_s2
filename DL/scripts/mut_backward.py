@@ -6,7 +6,7 @@ import subprocess, shutil, os, sys, time
 BASE=os.path.abspath("..")   # se ejecuta desde sim/
 M="motor_matvec_t.sv"; LN="lane_mac.sv"
 MUT={
- "R1  lane sin fila NO se anula (lane_mac)":(LN,"prod <= ok_q ? (w_q * op2) : 48'sd0;","prod <= (w_q * op2);"),
+ "R1  lane sin fila NO se anula (lane_mac)":(LN,"prod <= ok_q ? (m1 * m2) : 54'sd0;","prod <= (m1 * m2);"),
  "R19 row_ok=1 fijo (motor)":(M,".row_ok(p < NPG)",".row_ok(1'b1)"),
  "R9  mascara p<=NPG (off-by-one)":(M,".row_ok(p < NPG)",".row_ok(p <= NPG)"),
  "R2  arbol con una hoja de menos":(M,"assign t0[i] = prod_lane[i];","assign t0[i] = (i == L-1) ? '0 : prod_lane[i];"),
@@ -23,7 +23,7 @@ MUT={
  "R11 done un ciclo antes":(M,"assign wr_last = v2 && (k2 == N_IN - 1);","assign wr_last = v1 && (k1 == N_IN - 1);"),
  "R15 tuberia de control 1 etapa corta":(M,"localparam D = 2 + S;","localparam D = 1 + S;"),
  "R17 raddr no avanza al cambiar de columna":(M,"raddr <= raddr - (PASSES - 1) * N_IN + 1;","raddr <= raddr - (PASSES - 1) * N_IN;"),
- "R12 multiplicador sin signo (op2)":(LN,"wire signed [23:0] op2    = bw ? dz_q : a_s;","wire        [23:0] op2    = bw ? dz_q : a_s;"),
+ "R12 multiplicador sin signo (operando 2)":(LN,"wire signed [26:0] m2 = (op_sel == 2'd1)","wire        [26:0] m2 = (op_sel == 2'd1)"),
  "R14 [EQUIVALENTE] 2o saturador en dz_prev":(M,"dzpmem[k2] <= p3_s[23:0];","dzpmem[k2] <= (p3_s > 8388607) ? 24'sh7FFFFF : (p3_s < -8388608) ? 24'sh800000 : p3_s[23:0];"),
 }
 sel=sys.argv[1:] 

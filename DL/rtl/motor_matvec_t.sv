@@ -153,8 +153,10 @@ module motor_matvec_t #(
                 .w_we(we_w),   .w_waddr(w_addr_lane), .w_wdata(w_data),
                 .b_we(1'b0),   .b_waddr('0),          .b_wdata(24'sd0),   // sin uso (forward)
                 .dz_we(we_d),  .dz_waddr(d_pass),     .dz_wdata(dz_data),
+                .lf_we(1'b0),  .lf_waddr('0),         .lf_wdata(32'd0),    // sin uso (UPDATE)
                 .raddr(raddr), .bsel('0),             .dsel(p),
-                .bw(1'b1),     .row_ok(p < NPG),
+                .op_sel(2'd1), .row_ok(p < NPG),
+                .rmode(2'd0),  .dzp_ld(1'b0), .lf_ld(1'b0), .u_issue(1'b0), .u_bias(1'b0),
                 .load_bias(1'b0), .mac_en(1'b0),
                 .a_q(16'd0),
                 .z_out(),      .prod_out(prod_lane[g])

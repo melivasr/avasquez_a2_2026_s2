@@ -79,7 +79,7 @@ module tb_matvec_t;
     logic [23:0] datab  [0:N_IN-1];
     logic [23:0] dzptab [0:N_IN-1];
 
-    integer r, c, errores, ciclos;
+    integer r, c, errores, ciclos, hayx;
 
     initial begin
         if ($test$plusargs("vcd")) begin
@@ -91,6 +91,18 @@ module tb_matvec_t;
         $readmemh(F_A, atab);
         $readmemh(F_DA, datab);
         $readmemh(F_DZP, dzptab);
+
+        // ---- guarda anti falso-PASS: archivo ausente/incompleto => 'X' en las tablas, y 'X !== X'
+        //      es falso en Verilog (compararia X contra X y daria PASS) ----
+        hayx = 0;
+        for (r = 0; r < N_OUT*N_IN; r = r + 1) if (^wtab[r] === 1'bx) hayx = 1;
+        for (r = 0; r < N_OUT; r = r + 1) if (^dztab[r] === 1'bx) hayx = 1;
+        for (c = 0; c < N_IN; c = c + 1)
+            if ((^atab[c] === 1'bx) || (^datab[c] === 1'bx) || (^dzptab[c] === 1'bx)) hayx = 1;
+        if (hayx) begin
+            $display("FALLO: algun archivo de vectores falta o esta incompleto (hay 'x' en las tablas)");
+            $finish;
+        end
 
         repeat (4) @(posedge clk);
         rst = 0;

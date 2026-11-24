@@ -201,7 +201,9 @@ module motor_matvec #(
                 .b_we(we_b),  .b_waddr(b_pass),      .b_wdata(b_data),
                 // ---- puertos del backward: sin uso en este motor (solo forward) ----
                 .dz_we(1'b0), .dz_waddr('0), .dz_wdata(24'sd0),
-                .dsel('0), .bw(1'b0), .row_ok(1'b1),
+                .lf_we(1'b0), .lf_waddr('0), .lf_wdata(32'd0),
+                .dsel('0), .op_sel(2'd0), .row_ok(1'b1),
+                .rmode(2'd0), .dzp_ld(1'b0), .lf_ld(1'b0), .u_issue(1'b0), .u_bias(1'b0),
                 .raddr(raddr), .bsel(pass),
                 .load_bias(load_bias), .mac_en(v2),
                 .a_q(x_q),

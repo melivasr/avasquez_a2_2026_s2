@@ -115,6 +115,7 @@ struct Opciones {
     uint32_t semilla = 1;
     bool test_lut = false;
     bool test_bw = false;   // autoprueba sintetica de MATVEC_T + DERIV
+    bool test_up = false;   // autoprueba sintetica de UPDATE (multi-imagen)
     int caso = 0;           // caso de datos de la autoprueba (0..3)
     std::string cmp_a, cmp_b;
 };
@@ -125,6 +126,7 @@ static void uso() {
         "     ./emulador --comparar A.bin B.bin\n"
         "     ./emulador --test-lut\n"
         "     ./emulador --test-backward --caso=0..3 --semilla=N --vectores=PREF\n"
+        "     ./emulador --test-update --caso=0..3 --semilla=N --n=T --redondeo=... --vectores=PREF\n"
         "Opciones: --n= --pesos= --datos= --volcar= --vectores= --cada= --fw= --fw1=\n"
         "          --fw2= --fw3= --redondeo=cercano|estocastico|piso\n"
         "          --semilla=\n";
@@ -157,6 +159,7 @@ static bool parsear(int argc, char** argv, Opciones& op) {
             op.cmp_b = argv[++i];
         } else if (clave == "test-lut") op.test_lut = true;
         else if (clave == "test-backward") op.test_bw = true;
+        else if (clave == "test-update") op.test_up = true;
         else if (clave == "caso") op.caso = std::atoi(val.c_str());
         else if (clave == "n") op.n = std::atoi(val.c_str());
         else if (clave == "pesos") op.pesos = val;
@@ -577,6 +580,24 @@ static void actualizar(CapaQ& c, const i32* dz, const i32* a_in, Redondeo red,
     }
 }
 
+// ---- v5: ayudas para los vectores de UPDATE ----
+// PREF_modo.txt: "<cercano|estocastico|piso> fw1 fw2 fw3" (lo lee sim_update.sh).
+static void volcar_modo(const std::string& pref, const Opciones& op) {
+    std::FILE* f = std::fopen((pref + "_modo.txt").c_str(), "w");
+    if (!f) { std::cerr << "No se pudo escribir " << pref << "_modo.txt\n"; return; }
+    std::fprintf(f, "%s %d %d %d\n",
+                 op.red == Redondeo::Cercano ? "cercano" :
+                 op.red == Redondeo::Estocastico ? "estocastico" : "piso",
+                 op.fw[0], op.fw[1], op.fw[2]);
+    std::fclose(f);
+}
+// Estados del LFSR de cada fila (32 bits, hex de 8 digitos), por capa: PREF_lf{1,2,3}_{pre|post}.hex
+static void volcar_lfsr(const std::string& pref, const char* suf, const std::vector<uint32_t>* lfsr) {
+    for (int l = 0; l < 3; l++)
+        volcar_hex(pref + "_lf" + std::to_string(l + 1) + "_" + suf + ".hex",
+                   reinterpret_cast<const i32*>(lfsr[l].data()), lfsr[l].size(), 32);
+}
+
 struct MuestraQ {
     std::vector<i32> x;   // Q0.16
     int etiqueta = 0;
@@ -635,6 +656,7 @@ static Resultado entrenar_fixed(const Opciones& op, const PesosD& p0,
     const std::string& pv = op.vectores;
     if (!pv.empty()) {
         volcar_hex(pv + "_lut.hex", LUT, 1025, 16);
+        volcar_modo(pv, op);
         std::printf("# vectores dorados (imagen 0, epoca 0) con prefijo '%s'\n", pv.c_str());
     }
     // Traza de DELTA_OUT: una linea por imagen y epoca (ver formato abajo).
@@ -704,10 +726,11 @@ static Resultado entrenar_fixed(const Opciones& op, const PesosD& p0,
             }
 
             // ---- actualizacion: W3, W2, W1 ----
+            if (cap) volcar_lfsr(pv, "pre", lfsr);      // v5: estados del LFSR antes de actualizar
             actualizar(c[2], dz3.data(), a2.data(), op.red, lfsr[2], st, 2);
             actualizar(c[1], dz2.data(), a1.data(), op.red, lfsr[1], st, 1);
             actualizar(c[0], dz1.data(), m.x.data(), op.red, lfsr[0], st, 0);
-            if (cap) volcar_capas(pv, "post", c);
+            if (cap) { volcar_capas(pv, "post", c); volcar_lfsr(pv, "post", lfsr); }
         }
 
         double mse_promedio = (double)e2_total / 4294967296.0 / N_OUT / num_muestras;
@@ -894,6 +917,133 @@ static int test_backward(const Opciones& op) {
 }
 
 // ============================================================
+// AUTOPRUEBA SINTETICA de UPDATE  (--test-update)
+//
+// Como en --test-backward: el entrenamiento real casi nunca satura W ni dZ',
+// y la imagen 0 / epoca 0 no ejercita que el estado del LFSR PERSISTA entre
+// imagenes. Aqui se encadenan T actualizaciones (--n=T, def. del emulador 100:
+// usar --n=4) de una misma capa con (dz, a) distintos en cada una, llamando a
+// la MISMA funcion actualizar() del entrenamiento, y se vuelcan, por capa
+// (u3: W3 10x64 con a de 64 ; u2: W2 64x128 con a de 128):
+//   PREF_u3_W_pre.hex  _b_pre.hex  _lf_pre.hex      estado inicial (W,b 24 b ; LFSR 32 b)
+//   PREF_u3_dz.hex  (T*n_out, 24 b)  PREF_u3_a.hex (T*n_in, 16 b, Q0.16)   entradas por imagen
+//   PREF_u3_W_post.hex _b_post.hex _lf_post.hex     estado tras las T actualizaciones
+//   PREF_modo.txt                                   redondeo y fw usados
+// El redondeo se elige con --redondeo=cercano|estocastico|piso. Estados iniciales
+// del LFSR: misma formula que el entrenamiento (semilla ^ 0x9E3779B1*(capa*1024+fila+1)).
+// Casos (--caso=):
+//   0 realista : W +-1.0, b +-0.06, dz +-0.125, a con ~50 % de ceros (como las imagenes)
+//   1 rango completo : W, b, dz y a en todo su rango (satura dZ' de 27 bits y a veces W)
+//   2 extremos : W y b en {-2^23, 2^23-1}, dz en {-2^23, 2^23-1}, a en {0, 65535}
+//                (satura W y b en ambos sentidos)
+//   3 bordes   : dz y a elegidos para producir empates exactos del redondeo
+//                (p = 2^25 mod 2^26 en pesos y dZ' = 2^9 mod 2^10 en el sesgo), p = 0 y signos
+// ============================================================
+static int test_update(const Opciones& op) {
+    if (op.vectores.empty()) { std::cerr << "--test-update requiere --vectores=PREF\n"; return 1; }
+    if (op.caso < 0 || op.caso > 3) { std::cerr << "--caso debe estar entre 0 y 3\n"; return 1; }
+    if (op.n < 1 || op.n > 1000) { std::cerr << "--n (numero de imagenes) debe estar entre 1 y 1000\n"; return 1; }
+    for (int l = 0; l < 3; l++)
+        if (op.fw[l] < 15 || op.fw[l] > 22) {   // < 15: 1u << (46-fw) con 46-fw >= 32 desbordaria el LFSR de 32 bits
+            std::cerr << "--test-update: fw debe estar entre 15 y 22\n"; return 1;
+        }
+    const i64 WMAX = ((i64)1 << 23) - 1, WMIN = -((i64)1 << 23);
+    const int dz_borde[12] = {0, 1, -1, 20, -20, 40, -40, 120, -120, 200, -200, 280};
+    const int a_borde[6]   = {0, 1, 32767, 32768, 32769, 65535};
+    const int capa_n[2]  = {3, 2};
+    const int n_out_l[2] = {N_OUT, N_H2};
+    const int n_in_l[2]  = {N_H2, N_H1};
+    volcar_modo(op.vectores, op);
+    Estad st;
+
+    for (int t = 0; t < 2; t++) {
+        const int n_out = n_out_l[t], n_in = n_in_l[t], l = capa_n[t] - 1;
+        Sm64 rng{(uint64_t)op.semilla * 2654435761ULL + (uint64_t)op.caso * 40503ULL +
+                 (uint64_t)t * 65537ULL + 777ULL};
+        CapaQ c;
+        c.n_out = n_out; c.n_in = n_in; c.fw = op.fw[l];
+        c.W.assign((size_t)n_out * n_in, 0);
+        c.b.assign(n_out, 0);
+        auto ext = [&]() -> i32 { return (i32)((rng.next() & 1) ? WMAX : WMIN); };
+        for (int j = 0; j < n_out; j++) {
+            for (int k = 0; k < n_in; k++) {
+                i64 v;
+                switch (op.caso) {
+                case 0: v = rng.rango(-(1 << 20), (1 << 20) - 1); break;
+                case 1: v = rng.rango(WMIN, WMAX); break;
+                case 2: v = ext(); break;
+                default: v = rng.rango(-(1 << 20), (1 << 20) - 1); break;
+                }
+                c.W[(size_t)j * n_in + k] = (i32)v;
+            }
+            i64 bv = (op.caso == 0 || op.caso == 3) ? rng.rango(-(1 << 18), (1 << 18) - 1)
+                   : (op.caso == 1 ? rng.rango(WMIN, WMAX) : (i64)ext());
+            c.b[j] = (i32)bv;
+        }
+        // estados iniciales del LFSR: igual que entrenar_fixed()
+        std::vector<uint32_t> lfsr(n_out);
+        for (int j = 0; j < n_out; j++) {
+            uint32_t s = op.semilla ^ (0x9E3779B1u * (uint32_t)(l * 1024 + j + 1));
+            lfsr[j] = s ? s : 1u;
+        }
+        const std::string p = op.vectores + "_u" + std::to_string(capa_n[t]);
+        volcar_hex(p + "_W_pre.hex", c.W.data(), c.W.size(), 24);
+        volcar_hex(p + "_b_pre.hex", c.b.data(), c.b.size(), 24);
+        volcar_hex(p + "_lf_pre.hex", reinterpret_cast<const i32*>(lfsr.data()), lfsr.size(), 32);
+
+        std::vector<i32> dz_all, a_all, dz(n_out), a(n_in);
+        const int sh = 46 - c.fw, shb = 30 - c.fw;
+        uint64_t ties_w = 0, ties_b = 0, ceros = 0;
+        const uint64_t sat_antes = st.sat_w[l], satdzp_antes = st.sat_dzp;
+        for (int img = 0; img < op.n; img++) {
+            for (int j = 0; j < n_out; j++) {
+                switch (op.caso) {
+                case 0: dz[j] = (i32)rng.rango(-(1 << 19), (1 << 19) - 1); break;
+                case 1: dz[j] = (i32)rng.rango(WMIN, WMAX); break;
+                case 2: dz[j] = ext(); break;
+                default: dz[j] = dz_borde[rng.rango(0, 11)]; break;
+                }
+            }
+            for (int k = 0; k < n_in; k++) {
+                switch (op.caso) {
+                case 0: a[k] = (rng.next() & 1) ? 0 : (i32)rng.rango(0, 65535); break;
+                case 1: a[k] = (i32)rng.rango(0, 65535); break;
+                case 2: a[k] = (rng.next() & 1) ? 0 : 65535; break;
+                default: a[k] = a_borde[rng.rango(0, 5)]; break;
+                }
+            }
+            // cobertura (solo estadistica; replica dZ' y p de actualizar())
+            for (int j = 0; j < n_out; j++) {
+                i64 dzs = rsh((i64)dz[j] * LR_Q, 8);
+                i64 dzp = std::max<i64>(-((i64)1 << 26), std::min<i64>(((i64)1 << 26) - 1, dzs));
+                if ((dzp & (((i64)1 << shb) - 1)) == ((i64)1 << (shb - 1))) ties_b++;
+                for (int k = 0; k < n_in; k++) {
+                    i64 pp = dzp * a[k];
+                    if (pp == 0) ceros++;
+                    if ((pp & (((i64)1 << sh) - 1)) == ((i64)1 << (sh - 1))) ties_w++;
+                }
+            }
+            dz_all.insert(dz_all.end(), dz.begin(), dz.end());
+            a_all.insert(a_all.end(), a.begin(), a.end());
+            actualizar(c, dz.data(), a.data(), op.red, lfsr, st, l);
+        }
+        volcar_hex(p + "_dz.hex", dz_all.data(), dz_all.size(), 24);
+        volcar_hex(p + "_a.hex",  a_all.data(),  a_all.size(),  16);
+        volcar_hex(p + "_W_post.hex", c.W.data(), c.W.size(), 24);
+        volcar_hex(p + "_b_post.hex", c.b.data(), c.b.size(), 24);
+        volcar_hex(p + "_lf_post.hex", reinterpret_cast<const i32*>(lfsr.data()), lfsr.size(), 32);
+        std::printf("# caso %d semilla %u  u%d (%dx%d, fw=%d, T=%d): saturaciones W/b=%llu  dZ'=%llu  "
+                    "empates pesos=%llu sesgo=%llu  p=0: %llu  perdidas=%.2f%%\n",
+                    op.caso, op.semilla, capa_n[t], n_out, n_in, c.fw, op.n,
+                    (unsigned long long)(st.sat_w[l] - sat_antes),
+                    (unsigned long long)(st.sat_dzp - satdzp_antes),
+                    (unsigned long long)ties_w, (unsigned long long)ties_b, (unsigned long long)ceros,
+                    st.upd_total[l] ? 100.0 * (double)st.upd_perdidas[l] / (double)st.upd_total[l] : 0.0);
+    }
+    return 0;
+}
+
+// ============================================================
 // main
 // ============================================================
 int main(int argc, char** argv) {
@@ -903,6 +1053,7 @@ int main(int argc, char** argv) {
     if (op.test_lut) return test_lut();
     if (!op.cmp_a.empty()) return comparar(op.cmp_a, op.cmp_b);
     if (op.test_bw) return test_backward(op);
+    if (op.test_up) return test_update(op);
 
     if (op.modo != "double" && op.modo != "float" && op.modo != "fixed") { uso(); return 1; }
     for (int l = 0; l < 3; l++) {
