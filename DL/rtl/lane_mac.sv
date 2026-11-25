@@ -102,9 +102,9 @@ module lane_mac #(
 
     // ---------------- memorias ----------------
     logic signed [23:0] wmem  [0:(1<<ADDR_W)-1];      // pesos (lectura sincrona)
-    logic signed [23:0] bmem  [0:(1<<BIAS_AW)-1];     // sesgos (lectura asincrona, pocas entradas)
-    logic signed [23:0] dzmem [0:(1<<BIAS_AW)-1];     // dz por pasada (lectura sincrona)
-    logic        [31:0] lfmem [0:(1<<BIAS_AW)-1];     // estados LFSR por pasada (lectura sincrona)
+    (* ramstyle = "MLAB" *) logic signed [23:0] bmem  [0:(1<<BIAS_AW)-1];     // sesgos (lectura asincrona, pocas entradas)
+    (* ramstyle = "MLAB" *) logic signed [23:0] dzmem [0:(1<<BIAS_AW)-1];     // dz por pasada (lectura sincrona)
+    (* ramstyle = "MLAB" *) logic        [31:0] lfmem [0:(1<<BIAS_AW)-1];     // estados LFSR por pasada (lectura sincrona)
 
     // ---- senales de UPDATE declaradas aqui porque las usan las escrituras ----
     logic                     uv1, uv2, uv3;           // validez (fila existe) del elemento en cada etapa

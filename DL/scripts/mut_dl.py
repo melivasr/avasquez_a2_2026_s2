@@ -16,7 +16,7 @@ MUT = {
  "M4  DELTA_OUT escribe dz3 en el banco de la capa 2":("d_wr_en ? (f_pb(2'd3) + (dzw_row / L))","d_wr_en ? (f_pb(2'd2) + (dzw_row / L))"),
  "M5  LOADX sin el termino de redondeo (pix>=128)":("+ {16'b0, px_data[7]};","+ 17'd0;"),
  "M6  entrada de la capa 2 leida de a2 en vez de a1":("2'd2: f_abin = AB1;","2'd2: f_abin = AB2;"),
- "M7  salto de raddr del backward sin el -1":("f_bstep = (f_np(l) - 8'd1) * f_ni(l);","f_bstep = f_np(l) * f_ni(l);"),
+ "M7  salto de raddr del backward (capa 2) sin el -1":("2'd2: f_bstep = (P2 - 1) * 128;","2'd2: f_bstep = P2 * 128;"),
  "M8  lane 63 sin fila en la capa 2":("localparam integer NPG2 = (g < 64)  ?","localparam integer NPG2 = (g < 63)  ?"),
  "M9  etiqueta no se captura":("label <= lb_data[3:0];","label <= 4'd0;"),
  "M10 a_prev del DERIV desalineada":("else if (in_bwd) ra = f_abin(lay) + {3'b0, e_k};","else if (in_bwd) ra = f_abin(lay) + {3'b0, bk1};"),
@@ -26,6 +26,10 @@ MUT = {
  "M14 aciertos: ep_hits suma siempre 1":("ep_hits <= ep_hits + {15'b0, d_hit};","ep_hits <= ep_hits + 16'd1;"),
  "M15 forward: row_base avanza L-1":("row_base <= row_base + L;","row_base <= row_base + L - 1;"),
  "M16 paso del sesgo un estado antes":("wire          u_bias  = (st == U_B1);","wire          u_bias  = (st == U_B0);"),
+ "M17 f_rowoff capa 1: desplazamiento 4 -> 5":("2'd1:    f_rowoff = (q << 9) + (q << 8) + (q << 4);","2'd1:    f_rowoff = (q << 9) + (q << 8) + (q << 5);"),
+ "M18 f_rowoff capa 2: q<<7 -> q<<6":("2'd2:    f_rowoff = q << 7;","2'd2:    f_rowoff = q << 6;"),
+ "M19 f_rowoff capa 3: q<<6 -> q<<5":("default: f_rowoff = q << 6;","default: f_rowoff = q << 5;"),
+ "M20 salto de raddr del backward (capa 3) sin el -1":("default: f_bstep = (P3 - 1) * 64;","default: f_bstep = P3 * 64;"),
 }
 sel = sys.argv[1:]
 LS = os.environ.get("LS", "7 32 64")

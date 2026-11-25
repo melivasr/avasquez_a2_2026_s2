@@ -124,7 +124,21 @@ module motor_dl #(
         case (l) 2'd1: f_about = AB1; 2'd2: f_about = AB2; default: f_about = AB3; endcase
     endfunction
     function automatic [15:0] f_bstep(input [1:0] l);      // (pasadas-1)*entradas
-        f_bstep = (f_np(l) - 8'd1) * f_ni(l);
+        case (l)
+            2'd1: f_bstep = (P1 - 1) * 784;
+            2'd2: f_bstep = (P2 - 1) * 128;
+            default: f_bstep = (P3 - 1) * 64;
+        endcase
+    endfunction
+
+    // Offset de fila en el banco de W de una lane: q * entradas(lay), con q = fila / L.
+    // Se escribe con desplazamientos para NO inferir un multiplicador (784 = 512 + 256 + 16).
+    function automatic [AW-1:0] f_rowoff(input [1:0] l, input [AW-1:0] q);
+        case (l)
+            2'd1:    f_rowoff = (q << 9) + (q << 8) + (q << 4);
+            2'd2:    f_rowoff = q << 7;
+            default: f_rowoff = q << 6;
+        endcase
     endfunction
 
     // ============================================================
@@ -337,7 +351,7 @@ module motor_dl #(
     wire          u_bias  = (st == U_B1);
 
     // ---- carga del host ----
-    wire [AW-1:0] ld_waddr = f_wb(ld_lay) + (ld_row / L) * f_ni(ld_lay) + ld_col;
+    wire [AW-1:0] ld_waddr = f_wb(ld_lay) + f_rowoff(ld_lay, ld_row / L) + ld_col;
     wire [BW-1:0] ld_paddr = f_pb(ld_lay) + (ld_row / L);
 
     // ---- lectura del host: con el motor en reposo las lanes reciben la direccion del host ----
@@ -345,7 +359,7 @@ module motor_dl #(
     wire signed [23:0] rdb_l  [0:L-1];
     wire        [31:0] rdlf_l [0:L-1];
     wire signed [23:0] rddz_l [0:L-1];
-    wire [AW-1:0] hr_waddr = f_wb(hr_lay) + (hr_row / L) * f_ni(hr_lay) + hr_col;
+    wire [AW-1:0] hr_waddr = f_wb(hr_lay) + f_rowoff(hr_lay, hr_row / L) + hr_col;
     wire [BW-1:0] hr_paddr = f_pb(hr_lay) + (hr_row / L);
     wire [AW-1:0] raddr_l  = busy ? raddr : hr_waddr;
     wire [BW-1:0] bsel_l   = busy ? psel  : hr_paddr;

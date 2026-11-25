@@ -661,6 +661,18 @@ static Resultado entrenar_fixed(const Opciones& op, const PesosD& p0,
     }
     // Traza de DELTA_OUT: una linea por imagen y epoca (ver formato abajo).
     std::FILE* ftr = pv.empty() ? nullptr : std::fopen((pv + "_delta.hex").c_str(), "w");
+    // ---- v6: imagenes (uint8), etiquetas y totales por epoca para tb_dl / tb_dl_bus ----
+    std::FILE* fep = pv.empty() ? nullptr : std::fopen((pv + "_epocas.hex").c_str(), "w");
+    if (!pv.empty()) {
+        std::vector<i32> pixv(muestras.size() * (size_t)N_IN), lblv(muestras.size());
+        for (size_t i = 0; i < muestras.size(); i++) {
+            for (int k = 0; k < N_IN; k++)
+                pixv[i * N_IN + k] = (i32)std::llround(muestras[i].x(k) * 255.0);
+            lblv[i] = mq[i].etiqueta;
+        }
+        volcar_hex(pv + "_img.hex", pixv.data(), pixv.size(), 8);
+        volcar_hex(pv + "_lbl.hex", lblv.data(), lblv.size(), 8);
+    }
 
     auto start = std::chrono::steady_clock::now();
 
@@ -735,6 +747,9 @@ static Resultado entrenar_fixed(const Opciones& op, const PesosD& p0,
 
         double mse_promedio = (double)e2_total / 4294967296.0 / N_OUT / num_muestras;
         double accuracy = (double)aciertos / num_muestras * 100.0;
+        // v6: totales de la epoca (e2 en F32 y aciertos), una linea por epoca
+        if (fep) std::fprintf(fep, "%llx %llx\n", (unsigned long long)e2_total,
+                              (unsigned long long)aciertos);
         if ((epoch + 1) % op.cada == 0 || epoch == op.epocas - 1) {
             cout << "MSE promedio: " << mse_promedio
                  << " | Accuracy: " << accuracy << "%\n";
@@ -747,6 +762,7 @@ static Resultado entrenar_fixed(const Opciones& op, const PesosD& p0,
     r.us = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
 
     if (ftr) std::fclose(ftr);
+    if (fep) std::fclose(fep);
 
     // Hash de enteros (formato canonico del encabezado)
     uint64_t h = CHECKSUM_INICIAL;
@@ -755,6 +771,10 @@ static Resultado entrenar_fixed(const Opciones& op, const PesosD& p0,
         h = fnv_bytes(c[l].b.data(), c[l].b.size() * sizeof(i32), h);
     }
     r.checksum = h;
+    if (!pv.empty()) {   // v6: hash de enteros para compararlo con el del RTL
+        std::FILE* fh = std::fopen((pv + "_hash.hex").c_str(), "w");
+        if (fh) { std::fprintf(fh, "%016llx\n", (unsigned long long)h); std::fclose(fh); }
+    }
 
     // Volcado como double en column-major (mismo formato que el .bin)
     for (int l = 0; l < 3; l++) {
