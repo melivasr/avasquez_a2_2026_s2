@@ -260,20 +260,21 @@ module motor_dl #(
 
     wire signed [TW-1:0] t0 [0:LP-1];
     logic signed [TW-1:0] tr [0:(S > 0 ? S : 1)*LP - 1];
+    genvar i, s, n;
     generate
-        for (genvar i = 0; i < LP; i = i + 1) begin : hojas
+        for (i = 0; i < LP; i = i + 1) begin : hojas
             if (i < L) begin : real_lane
                 assign t0[i] = prod_lane[i];
             end else begin : relleno
                 assign t0[i] = '0;
             end
         end
-        for (genvar s = 1; s <= S; s = s + 1) begin : niveles
-            for (genvar i = 0; i < (LP >> s); i = i + 1) begin : nodos
+        for (s = 1; s <= S; s = s + 1) begin : niveles
+            for (n = 0; n < (LP >> s); n = n + 1) begin : nodos
                 if (s == 1) begin : desde_hojas
-                    always_ff @(posedge clk) tr[(s-1)*LP + i] <= t0[2*i] + t0[2*i+1];
+                    always_ff @(posedge clk) tr[(s-1)*LP + n] <= t0[2*n] + t0[2*n+1];
                 end else begin : desde_nivel
-                    always_ff @(posedge clk) tr[(s-1)*LP + i] <= tr[(s-2)*LP + 2*i] + tr[(s-2)*LP + 2*i+1];
+                    always_ff @(posedge clk) tr[(s-1)*LP + n] <= tr[(s-2)*LP + 2*n] + tr[(s-2)*LP + 2*n+1];
                 end
             end
         end
@@ -364,8 +365,9 @@ module motor_dl #(
     wire [AW-1:0] raddr_l  = busy ? raddr : hr_waddr;
     wire [BW-1:0] bsel_l   = busy ? psel  : hr_paddr;
 
+    genvar g;
     generate
-        for (genvar g = 0; g < L; g = g + 1) begin : lanes
+        for (g = 0; g < L; g = g + 1) begin : lanes
             localparam integer NPG1 = (g < 128) ? (128 - g + L - 1) / L : 0;
             localparam integer NPG2 = (g < 64)  ? (64  - g + L - 1) / L : 0;
             localparam integer NPG3 = (g < 10)  ? (10  - g + L - 1) / L : 0;
