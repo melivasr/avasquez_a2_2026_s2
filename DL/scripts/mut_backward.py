@@ -30,7 +30,7 @@ sel=sys.argv[1:]
 LS=os.environ.get("LS","1 7 10 32 48 64")
 for nombre,(f,a,b) in MUT.items():
     if sel and not any(nombre.startswith(x+" ") for x in sel): continue
-    d=f"{BASE}/sim/mut_rtl_tmp"; shutil.rmtree(d,ignore_errors=True); shutil.copytree(f"{BASE}/rtl",d)
+    d=f"{BASE}/sim/mut_rtl_tmp"; shutil.rmtree(d,ignore_errors=True); shutil.copytree(f"{BASE}/rtl/acelerador",d)
     s=open(f"{d}/{f}").read(); assert s.count(a)==1,(nombre,a); open(f"{d}/{f}","w").write(s.replace(a,b))
     det=[]; t0=time.time()
     for caso in range(4):

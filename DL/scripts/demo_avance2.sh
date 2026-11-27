@@ -18,7 +18,7 @@
 # ============================================================
 cd "$(dirname "$0")/../sim" || { echo "No se encontro DL/sim"; exit 2; }
 
-RTL="${RTL:-../rtl}"
+RTL="${RTL:-../rtl/acelerador}"
 OUT="logs_demo"
 mkdir -p "$OUT"
 

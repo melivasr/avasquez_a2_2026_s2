@@ -20,7 +20,7 @@ set -e
 P=${1:?Falta el prefijo de los vectores (el de --vectores=)}
 shift
 LS=${*:-"1 7 10 16 32 48 64 128"}
-RTL=${RTL:-../rtl}
+RTL=${RTL:-$(dirname "$0")/../rtl/acelerador}
 
 if [ -f "${P}_c3_W.hex" ]; then
   MODO=sintetico

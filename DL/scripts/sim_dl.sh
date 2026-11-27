@@ -18,7 +18,7 @@ N=${2:?Falta N (imagenes por epoca, el --n= del emulador)}
 E=${3:?Falta EPOCAS (las del emulador)}
 shift 3
 LS=${*:-"32"}
-RTL=${RTL:-../rtl}
+RTL=${RTL:-$(dirname "$0")/../rtl/acelerador}
 
 for f in modo.txt lut.hex img.hex lbl.hex epocas.hex hash.hex W1_pre.hex W2_pre.hex W3_pre.hex \
          b1_pre.hex b2_pre.hex b3_pre.hex lf1_pre.hex lf2_pre.hex lf3_pre.hex \
