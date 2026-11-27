@@ -1,6 +1,13 @@
-module top(
+module top #(
+    parameter ENABLE_MMIO = 0
+)(
     input logic clk,
-    input logic reset
+    input logic reset,
+    output logic [4:0] av_address,
+    output logic av_read, av_write,
+    output logic [31:0] av_writedata,
+    input logic [31:0] av_readdata,
+    input logic av_waitrequest
 );
 
 // ==========================================================
@@ -90,6 +97,24 @@ logic result_src_0;
 logic [4:0] rdWB;
 logic we_reg_wb;
 logic stall_mem;
+logic redirectEX, control_pending;
+logic wb_retired, wb_commit;
+
+// Mientras MEM espera, EX conserva la rama y WB mantiene disponible
+// su resultado para los operandos de EX que lo necesiten.
+assign redirectEX = pc_srcEX && !stall_mem;
+assign control_pending = jumpDE || beqDE || bneDE || bltDE || bgeDE ||
+                         jumpEX || beqEX || bneEX || bltEX || bgeEX;
+assign wb_commit = we_regWB && !wb_retired && !reset;
+
+always_ff @(posedge clk or posedge reset) begin
+    if (reset)
+        wb_retired <= 1'b0;
+    else if (!stallW)
+        wb_retired <= 1'b0;
+    else if (wb_commit)
+        wb_retired <= 1'b1;
+end
 
 // ==========================================================
 //                       ISSUE
@@ -99,9 +124,9 @@ issue Issue(
     .clk(clk),
     .reset(reset),
     .stallIF(stallIF),
-
+    .redirect(redirectEX),
+    .control_pending(control_pending),
     .new_addr(newpc),
-
     .addr(pcF),
     .pc_plus4F(pc4F),
     .instr(instrF)
@@ -133,14 +158,12 @@ if_id_pipe if_id(
 
 decode Decode(
     .clk(clk),
-
     .instr(instrDE), 
     .pc_plus4(pc4DE), 
     .pc_act(pcDE),
-    .we_regWB(we_regWB), 
+    .we_regWB(wb_commit),
     .wd(wdWB), 
     .instrDIN(instrDWB),
-
     .jump(jumpDE), 
     .blt(bltDE), 
     .bge(bgeDE), 
@@ -244,16 +267,13 @@ execute Exec(
     .rs2EIN(rs2DEX),
     .forwardA(forwardA),
     .forwardB(forwardB),
-
     .ex_mem(ex_mem_hz),
     .mem_wb(wdWB),
-
-    .pc_srcEx(pc_srcEX), // va a la Hazard Unit
+    .pc_srcEx(pc_srcEX), // Se aplica cuando MEM libera EX
     .result_srcOUT(result_srcEX_out),
     .we_memOUT(we_memEX_out), 
     .sizeOUT(sizeEX_out), 
     .we_regOUT(we_regEX_out), 
-
     .alu_result(alu_resultEX), 
     .rd2OUT(rd2EX_out), 
     .pc_plus4OUT(pcplus4EX_out),
@@ -275,7 +295,6 @@ ex_mem_pipe ex_mem(
     .clk(clk),
     .reset(reset),
     .stallM(stallM),
-
     .result_src(result_srcEX_out),
     .we_mem(we_memEX_out), 
     .size(sizeEX_out), 
@@ -284,7 +303,6 @@ ex_mem_pipe ex_mem(
     .rd2(rd2EX_out),
     .pcPlus4(pcplus4EX_out),
     .instrD(instrDEX_out), 
-
     .result_srcOUT(result_srcMEM), 
     .we_memOUT(we_memMEM), 
     .sizeOUT(sizeMEM),
@@ -299,27 +317,28 @@ ex_mem_pipe ex_mem(
 //                       MEM
 // ==========================================================
 
-memory Memory(
+memory #(.ENABLE_MMIO(ENABLE_MMIO)) Memory(
     .clk(clk),
     .reset(reset),
     .we_mem(we_memMEM), 
     .size(sizeMEM),
-    .we_reg(we_regMEM),                      // ← falta
-
+    .we_reg(we_regMEM),
+    .result_src(result_srcMEM),
     .alu_result(alu_resultMEM), 
     .rd2(rd2MEM), 
     .pc_plus4(pcPlus4MEM),
     .instrD(instrDMEM),
-
     .rMemData(rMemDataMEM), 
     .alu_resultOUT(alu_resultMEM_out), 
     .pc_plus4OUT(pcPlus4MEM_out),
     .instrDOUT(instrDMEM_out),
-
     .instrMOUT_hz(rdMEM),
     .we_reg_MEM_hz(we_reg_mem),
     .ex_mem(ex_mem_hz),
-    .stall_mem(stall_mem)
+    .stall_mem(stall_mem),
+    .av_address(av_address), .av_read(av_read), .av_write(av_write),
+    .av_writedata(av_writedata), .av_readdata(av_readdata),
+    .av_waitrequest(av_waitrequest)
 );
 
 // ==========================================================
@@ -331,17 +350,14 @@ mem_wb_pipe mem_wb(
     .clk(clk),
     .reset(reset),
     .stallW(stallW),
-
     // señales de control vienen directo de ex_mem_pipe (no pasan por memory)
     .result_src(result_srcMEM), 
     .we_reg(we_regMEM), 
-
     // datos vienen de memory
     .rMemData(rMemDataMEM),  
     .alu_result(alu_resultMEM_out), 
     .pcPlus4(pcPlus4MEM_out),
     .instrD(instrDMEM_out), 
-
     .result_srcOUT(result_srcWB), 
     .we_regOUT(we_regWB), 
     .rMemDataOUT(rMemDataWB),  
@@ -357,23 +373,17 @@ mem_wb_pipe mem_wb(
 writeback WriteBack(
     .result_src(result_srcWB),
     .we_reg(we_regWB), 
-
     .rMemData(rMemDataWB),
     .alu_result(alu_resultWB), 
     .pc_plus4(pc_plus4WB), 
-
-    .pc_srcEx(pc_srcEX),
+    .pc_srcEx(redirectEX),
     .pc_plus4F(pc4F),
     .pc_target_EX(pc_targetEX),
     .instrD(instrDWB),
-
     .we_regOUT(we_regWB_fb), 
-    
     .wdOUT(wdWB), // mem_wb
-
     .new_addr(newpc),
     .instrDOUT(instrDWB_fb),
-
     .instrWbOUT_hz(rdWB),
     .we_reg_wb_hz(we_reg_wb)
 );
@@ -396,12 +406,11 @@ hazard_unit HazardUnit(
     .rdEX(rdEX),
     .rdMEM(rdMEM), 
     .rdWB(rdWB),
-    .result_src_0(result_src_0), 
-    .pc_src_exOUT(pc_srcEX), 
+    .result_src_0(result_src_0 && !stall_mem),
+    .pc_src_exOUT(redirectEX),
     .we_reg_mem(we_reg_mem), 
     .we_reg_wb(we_reg_wb),
     .stall_mem(stall_mem),
-
     .forwardA(forwardA),
     .forwardB(forwardB),
     .stallIF(stallIF),

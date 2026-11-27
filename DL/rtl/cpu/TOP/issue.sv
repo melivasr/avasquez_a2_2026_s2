@@ -1,5 +1,6 @@
 module issue(
     input logic clk, reset, stallIF, // hazard
+    input logic redirect, control_pending,
     input logic [31:0] new_addr,
 
     output logic [31:0] addr, pc_plus4F, instr
@@ -9,12 +10,15 @@ module issue(
 //                       PC
 // ==========================================================
 
-logic pc_en;
+logic pc_en, fetch_enable;
+// Mantiene el PC en FREEZE y permite que una rama previa lo redirija.
+// Los bancos de prueba observan pc_en para detectar una parada confirmada.
+assign pc_en = fetch_enable || control_pending || stallIF;
 logic [31:0] addr_aux;
 
 pc pc_reg(
     .clk(clk),
-    .pc_enable(pc_en),
+    .pc_enable(fetch_enable || redirect),
     .reset(reset),
     .new_addr(new_addr),
     .addr(addr_aux),
@@ -24,7 +28,6 @@ pc pc_reg(
 // ==========================================================
 //                       INSTR ROM
 // ==========================================================
-
 
 instr_rom ROM(
     .clk(clk), // ROM síncrona
@@ -45,13 +48,12 @@ sumador_pc SUMPC(
 //                       SUMADOR PC
 // ==========================================================
 
-
 logic [8:0] pc_dec_aux;
 assign pc_dec_aux = {instr[23:19], instr[3:0]};
 
 pc_decoder pcDec(
     .pcDEC(pc_dec_aux),
-    .pc_enable(pc_en)
+    .pc_enable(fetch_enable)
 );
 
 // ==========================================================

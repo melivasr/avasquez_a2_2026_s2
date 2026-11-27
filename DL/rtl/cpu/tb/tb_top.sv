@@ -21,7 +21,7 @@ module tb_top;
     `define REGS  dut.Decode.RegBank.regs
     `define PC    dut.Issue.addr_aux
     `define ROM   dut.Issue.ROM.memory // acceder a rom en modulo instr_rom
-    `define RAM   dut.Memory.NormalRam.mem // acceder a memoria en modulo data_ram
+    `define RAM   dut.Memory.Ram.mem // acceder a memoria en modulo data_ram
 
     // ======================================
     // TASK PARA APLICAR RESET

@@ -24,7 +24,7 @@ module tb_general_dump;
     `define REGS  dut.Decode.RegBank.regs
     `define PC    dut.Issue.addr_aux
     `define ROM   dut.Issue.ROM.memory
-    `define DRAM  dut.Memory.NormalRam.mem
+    `define DRAM  dut.Memory.Ram.mem
 
     function automatic logic [15:0] read_be16(input int address);
         read_be16 = {loader_mem[address], loader_mem[address + 1]};
