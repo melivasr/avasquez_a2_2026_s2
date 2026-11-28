@@ -1,91 +1,93 @@
 `timescale 1ns/1ps
-
-module tb_data_ram;
-
-    logic        clk;
-    logic        we;
-    logic [1:0]  size;
-    logic [31:0] addr;
-    logic [31:0] wdata;
-    logic [31:0] rdata;
-
-    data_ram dut (
-        .clk(clk), .we_mem(we), .size(size),
-        .addr(addr), .wdata(wdata), .rdata(rdata)
-    );
-
+module tb_data_ram #(parameter RAM_ADDR_WIDTH = 16);
+    localparam CAPACITY = 1 << RAM_ADDR_WIDTH;
+    localparam [31:0] ULTIMA_PALABRA = CAPACITY - 4;
+    localparam [31:0] ALIAS_RAM = 32'h0002_0000;
+    localparam PALABRA = 1'b1, BYTE = 1'b0;
+    logic clk = 0, reset = 1;
     always #5 clk = ~clk;
 
-    task automatic do_write(
-        input [31:0] a,
-        input [31:0] d,
-        input [1:0]  s
+    logic store = 0, size = 1;
+    logic [1:0] source = 0;
+    logic [31:0] addr = 0, wdata = 0, rdata;
+    logic stall, local_store, av_read, av_write;
+
+    memory #(.ENABLE_MMIO(1), .RAM_ADDR_WIDTH(RAM_ADDR_WIDTH)) dut (
+        .clk(clk), .reset(reset), .we_mem(store), .size(size), .we_reg(1'b0),
+        .result_src(source), .alu_result(addr), .rd2(wdata), .pc_plus4(32'b0), .instrD(5'b0),
+        .rMemData(rdata), .stall_mem(stall), .local_store(local_store),
+        .av_read(av_read), .av_write(av_write), .av_readdata(32'b0), .av_waitrequest(1'b0)
     );
-        @(posedge clk); #1;
-        addr = a; wdata = d; size = s; we = 1;
-        @(posedge clk); #1;
-        we = 0;
-        addr = 0; wdata = 0; size = 2'bxx; // neutral exit state
+
+    task automatic probar_escritura(input logic [31:0] direccion, dato,
+                                input logic es_palabra, aceptado);
+        @(negedge clk);
+        addr = direccion;
+        wdata = dato;
+        size = es_palabra;
+        store = 1;
+        #1;
+        if (local_store !== aceptado || stall !== 1'b0 ||
+            av_read !== 1'b0 || av_write !== 1'b0)
+            $fatal(1, "Controles de SW/SB incorrectos en %h", addr);
+        @(negedge clk);
+        store = 0;
+    endtask
+
+    task automatic probar_lectura(input logic [31:0] direccion, esperado,
+                               input logic es_palabra, aceptado);
+        @(negedge clk);
+        addr = direccion;
+        size = es_palabra;
+        source = 2'b01;
+        #1;
+        if (dut.ram_request !== aceptado || stall !== aceptado ||
+            av_read !== 1'b0 || av_write !== 1'b0)
+            $fatal(1, "Controles de LW/LB incorrectos en %h", addr);
+        // La respuesta a un acceso inválido es inmediata.
+        if (!aceptado && rdata !== esperado)
+            $fatal(1, "Acceso rechazado en %h devolvió %h", addr, rdata);
+        @(negedge clk);
+        if (stall !== 1'b0 || rdata !== esperado)
+            $fatal(1, "Respuesta en %h: %h, esperado %h", addr, rdata, esperado);
+        source = 0;
     endtask
 
     initial begin
-        $dumpfile("sim/waves/tb_data_ram.vcd");
-        $dumpvars(0, tb_data_ram);
+        @(negedge clk);
+        reset = 0;
+        // La imagen de arranque carga la primera y la última palabra. Los huecos quedan en cero.
+        probar_lectura(0, 32'h44332211, PALABRA, 1'b1);
+        probar_lectura(ULTIMA_PALABRA, 32'hddccbbaa, PALABRA, 1'b1);
+        probar_lectura(4, 0, PALABRA, 1'b1);
 
-        clk = 0; we = 0; size = 2'b10; addr = 0; wdata = 0;
-        $display(" Iniciando test de Data RAM...");
-        #10;
+        // Las direcciones altas fuera de MMIO apuntan a las mismas palabras locales.
+        probar_escritura(0, 32'h12345678, PALABRA, 1'b1);
+        probar_escritura(ULTIMA_PALABRA, 32'h87654321, PALABRA, 1'b1);
+        probar_lectura(ALIAS_RAM, 32'h12345678, PALABRA, 1'b1);
+        probar_lectura(ALIAS_RAM + ULTIMA_PALABRA, 32'h87654321, PALABRA, 1'b1);
 
-        // TEST 1: SW + LW
-        $display("\n TEST 1: SW + LW");
-        do_write(32'h00000010, 32'h12345678, 2'b10);
-        size = 2'b10; addr = 32'h00000010;
-        if (rdata !== 32'h12345678)
-            $error(" ERROR en LW: %h", rdata);
-        else
-            $display(" OK LW");
+        // Prueba accesos por byte y los tres offsets que dejan una palabra desalineada.
+        probar_escritura(0, 32'h80, BYTE, 1'b0);
+        probar_lectura(0, 0, BYTE, 1'b0);
+        for (integer offset = 1; offset <= 3; offset++) begin
+            probar_escritura(offset, 32'hffffffff, PALABRA, 1'b0);
+            probar_lectura(offset, 0, PALABRA, 1'b0);
+        end
+        probar_escritura(CAPACITY - 1, 32'hffffffff, PALABRA, 1'b0);
+        probar_lectura(CAPACITY - 1, 0, PALABRA, 1'b0);
 
-        // TEST 2: SB + LB positivo
-        $display("\n TEST 2: SB + LB (positivo)");
-        do_write(32'h00000020, 32'h0000007F, 2'b00);
-        size = 2'b00; addr = 32'h00000020;
-        if (rdata !== 32'h0000007F)
-            $error(" ERROR en LB positivo: %h", rdata);
-        else
-            $display(" OK LB positivo");
+        // Comprueba que los stores rechazados no cambiaron la RAM.
+        probar_lectura(0, 32'h12345678, PALABRA, 1'b1);
+        probar_lectura(4, 0, PALABRA, 1'b1);
+        probar_lectura(ULTIMA_PALABRA, 32'h87654321, PALABRA, 1'b1);
 
-        // TEST 3: SB + LB negativo
-        $display("\n TEST 3: SB + LB (negativo)");
-        do_write(32'h00000021, 32'h000000FF, 2'b00);
-        size = 2'b00; addr = 32'h00000021;
-        if (rdata !== 32'hFFFFFFFF)
-            $error(" ERROR en LB negativo: %h", rdata);
-        else
-            $display(" OK LB negativo (sign extend)");
-
-        // TEST 4: Endianness
-        $display("\n TEST 4: Endianness");
-        do_write(32'h00000030, 32'hAABBCCDD, 2'b10);
-        size = 2'b00;
-        #1; // let size settle
-        addr = 32'h00000030; #1; if (rdata !== 32'hFFFFFFDD) $error("❌ Byte 0 incorrecto: %h", rdata);
-        addr = 32'h00000031; #1; if (rdata !== 32'hFFFFFFCC) $error("❌ Byte 1 incorrecto: %h", rdata);
-        addr = 32'h00000032; #1; if (rdata !== 32'hFFFFFFBB) $error("❌ Byte 2 incorrecto: %h", rdata);
-        addr = 32'h00000033; #1; if (rdata !== 32'hFFFFFFAA) $error("❌ Byte 3 incorrecto: %h", rdata);
-        $display(" OK Endianness (little endian)");
-
-        // TEST 5: Sobrescritura parcial
-        $display("\n TEST 5: SB sobre SW");
-        do_write(32'h00000040, 32'h11223344, 2'b10);
-        do_write(32'h00000041, 32'h000000FF, 2'b00);
-        size = 2'b10; addr = 32'h00000040; #1;
-        if (rdata !== 32'h1122FF44)
-            $error(" ERROR en mezcla SB/SW: %h", rdata);
-        else
-            $display(" OK mezcla SB/SW");
-
-        $display("\n TODOS LOS TESTS COMPLETADOS");
-        #10; $finish;
+        // Durante reset se bloquea la escritura y se conserva el dato anterior.
+        reset = 1;
+        probar_escritura(0, 32'hffffffff, PALABRA, 1'b0);
+        reset = 0;
+        probar_lectura(0, 32'h12345678, PALABRA, 1'b1);
+        $display("PASS RAM por palabras: %0d bytes", CAPACITY);
+        $finish;
     end
-
 endmodule

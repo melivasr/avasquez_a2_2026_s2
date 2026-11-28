@@ -25,7 +25,7 @@ module regfile (
     // Logica Secuencial para escritura
     // ----------------------------------------------------------
 
-    always_ff @(posedge clk) begin
+    always @(posedge clk) begin
         if (we_reg && rd != 0) // si WE =1 y rd es distinto de 0 (en x0 no se escribe)
             regs[rd] <= wd;
     end
