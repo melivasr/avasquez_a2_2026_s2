@@ -48,6 +48,8 @@ module lane_mac #(
     parameter ADDR_W  = 12,   // bits de direccion de la RAM de pesos
     parameter BIAS_AW = 2,    // bits de direccion de las memorias por pasada (sesgo, dz, LFSR)
     parameter ACC_W   = 52,   // ancho del acumulador forward (con signo)
+    parameter INIT_LANE = 0,
+    parameter [15:0] LANE_ID = "00",
     parameter SH      = 24    // FW + 4 : desplazamiento acc -> Q4.12 (tambien fija FW de UPDATE)
 ) (
     input                          clk,
@@ -105,6 +107,20 @@ module lane_mac #(
     (* ramstyle = "MLAB" *) logic signed [23:0] bmem  [0:(1<<BIAS_AW)-1];     // sesgos (lectura asincrona, pocas entradas)
     (* ramstyle = "MLAB" *) logic signed [23:0] dzmem [0:(1<<BIAS_AW)-1];     // dz por pasada (lectura sincrona)
     (* ramstyle = "MLAB" *) logic        [31:0] lfmem [0:(1<<BIAS_AW)-1];     // estados LFSR por pasada (lectura sincrona)
+
+    // El reset del motor conserva los parámetros que ya fueron modificados.
+    generate
+        if (INIT_LANE) begin : init_lane
+            localparam W_FILE = {"w_", LANE_ID, ".hex"};
+            localparam B_FILE = {"b_", LANE_ID, ".hex"};
+            localparam LF_FILE = {"lf_", LANE_ID, ".hex"};
+            initial begin
+                $readmemh(W_FILE, wmem);
+                $readmemh(B_FILE, bmem);
+                $readmemh(LF_FILE, lfmem);
+            end
+        end
+    endgenerate
 
     // ---- senales de UPDATE declaradas aqui porque las usan las escrituras ----
     logic                     uv1, uv2, uv3;           // validez (fila existe) del elemento en cada etapa

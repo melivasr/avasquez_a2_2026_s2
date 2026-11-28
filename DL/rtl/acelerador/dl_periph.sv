@@ -6,6 +6,7 @@
 // ============================================================
 module dl_periph #(
     parameter L        = 32,           // sintetizar solo con L potencia de 2 (32 o 64)
+    parameter INIT_LANES = 0,       // Precarga W, b y LFSR desde archivos por lane.
     parameter FW       = 20,
     parameter LUT_FILE = "lut.hex",
     parameter NIMG     = 100,
@@ -24,7 +25,7 @@ module dl_periph #(
     wire [25:0] px_addr;  wire [7:0] px_data;
     wire [15:0] lb_addr;  wire [7:0] lb_data;
 
-    dl_avalon #(.L(L), .FW(FW), .LUT_FILE(LUT_FILE)) u_avs (
+    dl_avalon #(.L(L), .INIT_LANES(INIT_LANES), .FW(FW), .LUT_FILE(LUT_FILE)) u_avs (
         .clk(clk), .rst(rst),
         .avs_address(avs_address), .avs_read(avs_read), .avs_write(avs_write),
         .avs_writedata(avs_writedata), .avs_readdata(avs_readdata), .avs_waitrequest(avs_waitrequest),

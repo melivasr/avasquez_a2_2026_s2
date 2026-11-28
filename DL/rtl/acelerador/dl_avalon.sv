@@ -36,6 +36,7 @@
 // ============================================================
 module dl_avalon #(
     parameter L        = 32,
+    parameter INIT_LANES = 0,       // Precarga W, b y LFSR desde archivos por lane.
     parameter FW       = 20,
     parameter LUT_FILE = "lut.hex"
 ) (
@@ -79,7 +80,7 @@ module dl_avalon #(
     logic [21:0] rd_addr, ld_addr;
     wire  [31:0] hr_data;
 
-    motor_dl #(.L(L), .FW(FW), .LUT_FILE(LUT_FILE)) u_motor (
+    motor_dl #(.L(L), .INIT_LANES(INIT_LANES), .FW(FW), .LUT_FILE(LUT_FILE)) u_motor (
         .clk(clk), .rst(rst),
         .cmd_valid(cmd_valid_r), .cmd_op(cmd_op_r), .cmd_lay(cmd_lay_r), .cmd_arg(cmd_arg_r),
         .busy(m_busy), .done(m_done),

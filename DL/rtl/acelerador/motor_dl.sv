@@ -39,6 +39,7 @@
 // ============================================================
 module motor_dl #(
     parameter L        = 32,            // numero de lanes
+    parameter INIT_LANES = 0,       // Precarga W, b y LFSR desde archivos por lane.
     parameter FW       = 20,            // bits fraccionarios de W y b
     parameter LUT_FILE = "lut.hex",
     // ---- derivados: NO se sobreescriben desde fuera ----
@@ -365,6 +366,11 @@ module motor_dl #(
     wire [AW-1:0] raddr_l  = busy ? raddr : hr_waddr;
     wire [BW-1:0] bsel_l   = busy ? psel  : hr_paddr;
 
+    // Dos dígitos hexadecimales ASCII, calculados al elaborar cada lane.
+    function automatic [7:0] hex_digit(input [3:0] digit);
+        hex_digit = digit < 10 ? 8'h30 + digit : 8'h57 + digit;
+    endfunction
+
     genvar g;
     generate
         for (g = 0; g < L; g = g + 1) begin : lanes
@@ -377,8 +383,10 @@ module motor_dl #(
             wire       we_d = dzw_en && ((dzw_row % L) == g);
             wire signed [15:0] z;
 
+            localparam [15:0] LANE_ID = {hex_digit(g[7:4]), hex_digit(g[3:0])};
             lane_mac #(
-                .ADDR_W(AW), .BIAS_AW(BW), .ACC_W(52), .SH(FW + 4)
+                .ADDR_W(AW), .BIAS_AW(BW), .ACC_W(52), .SH(FW + 4),
+                .INIT_LANE(INIT_LANES), .LANE_ID(LANE_ID)
             ) u_lane (
                 .clk(clk),
                 .w_we(ld_we && mine && ld_kind == 2'd0),  .w_waddr(ld_waddr), .w_wdata(ld_data[23:0]),

@@ -1,6 +1,8 @@
 // Craft21 y el acelerador comparten el reloj y el reset activo en alto.
 module craft21_dl_top #(
     parameter L = 32,
+    parameter RAM_ADDR_WIDTH = 16,
+    parameter INIT_LANES = 0,       // Precarga W, b y LFSR desde archivos por lane.
     parameter FW = 20,
     parameter LUT_FILE = "lut.hex",
     parameter NIMG = 100,
@@ -8,21 +10,27 @@ module craft21_dl_top #(
     parameter LBL_FILE = "ds_lbl.hex"
 )(
     input logic clk,
-    input logic reset
+    input logic reset,
+    output logic command_accepted, local_store,
+    output logic [31:0] local_addr, local_wdata
 );
     logic [4:0] address;
     logic read, write, waitrequest;
     logic [31:0] writedata, readdata;
 
-    top #(.ENABLE_MMIO(1)) cpu (
+    // La placa usa el primer CMD aceptado para indicar ejecución.
+    assign command_accepted = !reset && write && !waitrequest && address == 5'd1;
+
+    top #(.ENABLE_MMIO(1), .RAM_ADDR_WIDTH(RAM_ADDR_WIDTH)) cpu (
         .clk(clk), .reset(reset),
         .av_address(address), .av_read(read), .av_write(write),
         .av_writedata(writedata), .av_readdata(readdata),
-        .av_waitrequest(waitrequest)
+        .av_waitrequest(waitrequest),
+        .local_store(local_store), .local_addr(local_addr), .local_wdata(local_wdata)
     );
 
     dl_periph #(
-        .L(L), .FW(FW), .LUT_FILE(LUT_FILE), .NIMG(NIMG),
+        .L(L), .INIT_LANES(INIT_LANES), .FW(FW), .LUT_FILE(LUT_FILE), .NIMG(NIMG),
         .IMG_FILE(IMG_FILE), .LBL_FILE(LBL_FILE)
     ) accelerator (
         .clk(clk), .rst(reset),
