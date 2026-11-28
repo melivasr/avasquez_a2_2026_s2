@@ -24,7 +24,7 @@ module tb_general_dump;
     `define REGS  dut.Decode.RegBank.regs
     `define PC    dut.Issue.addr_aux
     `define ROM   dut.Issue.ROM.memory
-    `define DRAM  dut.Memory.Ram.mem
+    `define DRAM  dut.Memory.Ram
 
     function automatic logic [15:0] read_be16(input int address);
         read_be16 = {loader_mem[address], loader_mem[address + 1]};
@@ -51,10 +51,10 @@ module tb_general_dump;
             `ROM[i] = 32'h00580000;
         end
 
-        for (int i = 0; i < RAM_DEPTH; i++) begin
-            `DRAM[i] = 8'h00;
+        for (int i = 0; i < RAM_DEPTH / 4; i++)
+            `DRAM.mem[i] = 32'b0;
+        for (int i = 0; i < RAM_DEPTH; i++)
             loader_mem[i] = 8'h00;
-        end
 
         for (int i = 0; i < 32; i++) begin
             `REGS[i] = 32'h0;
@@ -98,7 +98,7 @@ module tb_general_dump;
 
     task automatic load_raw_hex();
         $readmemh(rom_hex, `ROM);
-        $readmemh(data_hex, `DRAM);
+        $readmemh(data_hex, `DRAM.mem);
 
         $display("[LOAD]  ROM   : %s", rom_hex);
         $display("[LOAD]  DATA  : %s", data_hex);
@@ -171,7 +171,8 @@ module tb_general_dump;
         end
 
         for (int i = 0; i < data_size; i++) begin
-            `DRAM[data_base + i] = loader_mem[data_offset + i];
+            `DRAM.mem[(data_base + i) >> 2][((data_base + i) % 4)*8 +: 8] =
+                loader_mem[data_offset + i];
         end
 
         $display("[LOAD]  LOADER: %s", loader_hex);
@@ -206,7 +207,7 @@ module tb_general_dump;
         rom_path = $sformatf("outputs/%0s_rom.hex", out_prefix);
         regs_path = $sformatf("outputs/%0s_regs.txt", out_prefix);
 
-        $writememh(dram_path, `DRAM);
+        $writememh(dram_path, `DRAM.mem);
         $writememh(rom_path, `ROM);
         dump_regs_to_file(regs_path);
 
@@ -230,7 +231,7 @@ module tb_general_dump;
         bit load_failed;
 
         rom_hex = "programs/program.hex";
-        data_hex = "programs/data.hex";
+        data_hex = "programs/data_words.hex";
         loader_hex = "";
         out_prefix = "general";
         max_cycles = 1000000;

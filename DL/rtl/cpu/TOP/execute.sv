@@ -1,7 +1,7 @@
 module execute(
     input logic jump, blt, bne, beq, bge,
     input logic [1:0] result_src,
-    input logic we_mem, size,
+    input logic we_mem,
     input logic [4:0] alu_control,
     input logic alu_src,
     input logic we_reg,
@@ -16,7 +16,7 @@ module execute(
     output logic pc_srcEx,
     output logic [1:0] result_srcOUT, 
     output logic we_memOUT,
-    output logic sizeOUT, we_regOUT,
+    output logic we_regOUT,
 
     output logic [31:0] alu_result, rd2OUT, pc_plus4OUT,
     output logic [31:0] pc_targetOUT,
@@ -170,7 +170,6 @@ orgate5 TypeJ_OR(
 
 assign result_srcOUT = result_src;
 assign we_memOUT = we_mem;
-assign sizeOUT = size;
 
 
 assign we_regOUT = we_reg;

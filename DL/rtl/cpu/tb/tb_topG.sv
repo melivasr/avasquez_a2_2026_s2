@@ -37,7 +37,7 @@ module tb_topG;
     `define REGS  dut.Decode.RegBank.regs
     `define PC    dut.Issue.addr_aux
     `define ROM   dut.Issue.ROM.memory // acceder a rom en modulo instr_rom
-    `define RAM   dut.Memory.Ram.mem // acceder a memoria en modulo data_ram
+    `define RAM   dut.Memory.Ram // acceder a memoria en modulo data_ram
 
     // ==========================================
     // Contadores
@@ -160,7 +160,7 @@ module tb_topG;
         $readmemh(rom_file, `ROM);
         $display("[LOAD]  %s", rom_file);
 
-        $readmemh(ram_file, `RAM);
+        $readmemh(ram_file, `RAM.mem);
         $display("[LOAD] %s", ram_file);
         apply_reset();
     endtask

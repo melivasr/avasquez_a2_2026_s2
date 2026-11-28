@@ -3,7 +3,7 @@ module memory #(
     parameter RAM_ADDR_WIDTH = 16
 )(
     input logic clk, reset,
-    input logic we_mem, size, we_reg,
+    input logic we_mem, we_reg,
     input logic [1:0] result_src,
     input logic [31:0] alu_result, rd2, pc_plus4,
     input logic [4:0] instrD,
@@ -33,7 +33,7 @@ module memory #(
     // dl_avalon define registros en 00–0D y 10–13.
     assign mapped_word = (word_index <= 5'h0d) ||
                          (word_index >= 5'h10 && word_index <= 5'h13);
-    assign aligned_word = size && (alu_result[1:0] == 2'b00);
+    assign aligned_word = alu_result[1:0] == 2'b00;
     assign mmio_word = mmio_selected && mapped_word && aligned_word;
     assign ram_word = !mmio_selected && aligned_word;
 

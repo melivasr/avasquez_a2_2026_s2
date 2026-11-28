@@ -9,7 +9,7 @@ module decode(
     output logic jump, blt, bge, bne, beq, 
     output logic [1:0] result_src,
     output logic alu_src,
-    output logic we_mem, size,
+    output logic we_mem,
     output logic [4:0] alu_control, instrDOUT,
     output logic we_reg,
     output logic [31:0] rd1, rd2, imm, pc_actOUT, pc_plus4OUT,
@@ -33,7 +33,6 @@ control_unit CU(
 
     .alu_control(alu_control),
     .we_reg(we_reg),
-    .size(size),
     .imm_src2(immSrc2),
     .imm_src(immSrc),
     .we_mem(we_mem),

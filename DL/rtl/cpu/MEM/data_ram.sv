@@ -13,7 +13,7 @@ module data_ram #(
 
     initial $readmemh("programs/data_words.hex", mem);
 
-    // MEM valida el tamaño y el alineamiento antes de habilitar el puerto.
+    // MEM valida el alineamiento antes de habilitar el puerto.
     always @(posedge clk) begin
         if (we_mem)
             mem[index] <= wdata;

@@ -88,9 +88,8 @@ module tb_craft21_wait;
         if (reads != 1 || writes != 1 || commits_x6 != 1 ||
             !saw_branch_behind_mem || !saw_load_forward ||
             dut.Issue.addr_aux !== 32 ||
-            dut.Memory.Ram.mem['h110] !== 8'h00 ||
-            {dut.Memory.Ram.mem['h103], dut.Memory.Ram.mem['h102],
-             dut.Memory.Ram.mem['h101], dut.Memory.Ram.mem['h100]} !== 32'h444c0100)
+            dut.Memory.Ram.mem['h110 >> 2] !== 32'h0 ||
+            dut.Memory.Ram.mem['h100 >> 2] !== 32'h444c0100)
             $fatal(1, "wait/branch/reset results: reads=%0d writes=%0d WB=%0d branch=%b pc=%h",
                    reads, writes, commits_x6, saw_branch_behind_mem, dut.Issue.addr_aux);
         $display("PASS Avalon wait: stable read/write, single WB, retained branch, load forwarding and reset");

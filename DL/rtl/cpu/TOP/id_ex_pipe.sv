@@ -5,7 +5,7 @@ module id_ex_pipe (
     input  logic jump, blt, bge, bne, beq, 
     input logic [1:0] result_src,
     input logic alu_src,
-    input logic we_mem, size,
+    input logic we_mem,
     input logic [4:0] alu_control,
     input logic we_reg,
     input logic [31:0] rd1, rd2, imm, pc_act, pcplus4,
@@ -18,7 +18,7 @@ module id_ex_pipe (
     output  logic jumpOUT, bltOUT, bgeOUT, bneOUT, beqOUT, 
     output logic [1:0] result_srcOUT,
     output logic alu_srcOUT,
-    output logic we_memOUT, sizeOUT,
+    output logic we_memOUT,
     output logic [4:0] alu_controlOUT,
     output logic we_regOUT,
     output logic [31:0] rd1OUT, rd2OUT, immOUT, pc_actOUT, pcplus4OUT,
@@ -34,7 +34,6 @@ task automatic clear_pipeline;
     result_srcOUT        <= 2'b0;
     alu_srcOUT           <= 1'b0;
     we_memOUT            <= 1'b0;
-    sizeOUT              <= 1'b0;
     alu_controlOUT       <= 5'b0;
     we_regOUT            <= 1'b0;
     rd1OUT               <= 32'b0;
@@ -63,7 +62,6 @@ always_ff @(posedge clk or posedge reset) begin
         result_srcOUT        <= result_src;
         alu_srcOUT           <= alu_src;
         we_memOUT            <= we_mem;
-        sizeOUT              <= size;
         alu_controlOUT       <= alu_control;
         we_regOUT            <= we_reg;
         rd1OUT               <= rd1;

@@ -1,5 +1,6 @@
 module top #(
-    parameter ENABLE_MMIO = 0
+    parameter ENABLE_MMIO = 0,
+    parameter RAM_ADDR_WIDTH = 16
 )(
     input logic clk,
     input logic reset,
@@ -7,7 +8,9 @@ module top #(
     output logic av_read, av_write,
     output logic [31:0] av_writedata,
     input logic [31:0] av_readdata,
-    input logic av_waitrequest
+    input logic av_waitrequest,
+    output logic local_store,
+    output logic [31:0] local_addr, local_wdata
 );
 
 // ==========================================================
@@ -26,7 +29,7 @@ logic [31:0] pc4DEOUT, pcDEOUT;
 logic        jumpDE, bltDE, bgeDE, bneDE, beqDE;
 logic [1:0] result_srcDE;
 logic alu_srcDE;
-logic        we_memDE, sizeDE;
+logic        we_memDE;
 logic [4:0]  alu_controlDE, instrDDE;
 logic        we_regDE;
 logic [31:0] rd1DE, rd2DE, immDE;
@@ -35,7 +38,7 @@ logic [31:0] rd1DE, rd2DE, immDE;
 logic        jumpEX, bltEX, bgeEX, bneEX, beqEX;
 logic [1:0] result_srcEX;
 logic alu_srcEX;
-logic        we_memEX, sizeEX;
+logic        we_memEX;
 logic [4:0]  alu_controlEX, instrDEX;
 logic        we_regEX;
 logic [31:0] rd1EX, rd2EX, immEX, pc_actEX, pcplus4EX;
@@ -44,14 +47,14 @@ logic        pc_srcEX;
 // EX → EX/MEM
 logic [31:0] alu_resultEX, pc_targetEX;
 logic [1:0]  result_srcEX_out;
-logic        we_memEX_out, sizeEX_out;
+logic        we_memEX_out;
 logic        we_regEX_out;
 logic [31:0] rd2EX_out, pcplus4EX_out;
 logic [4:0]  instrDEX_out;
 
 // EX/MEM → MEM
 logic [1:0]  result_srcMEM;
-logic        we_memMEM, sizeMEM;
+logic        we_memMEM;
 logic        we_regMEM;
 logic [31:0] alu_resultMEM, rd2MEM, pcPlus4MEM;
 logic [4:0]  instrDMEM;
@@ -98,6 +101,8 @@ logic [4:0] rdWB;
 logic we_reg_wb;
 logic stall_mem;
 logic redirectEX, control_pending;
+assign local_addr = alu_resultMEM;
+assign local_wdata = rd2MEM;
 logic wb_retired, wb_commit;
 
 // Mientras MEM espera, EX conserva la rama y WB mantiene disponible
@@ -172,7 +177,6 @@ decode Decode(
     .result_src(result_srcDE), 
     .alu_src(alu_srcDE),
     .we_mem(we_memDE), 
-    .size(sizeDE), 
     .alu_control(alu_controlDE), 
     .instrDOUT(instrDDE),
     .we_reg(we_regDE),
@@ -202,7 +206,6 @@ id_ex_pipe id_ex(
     .result_src(result_srcDE), 
     .alu_src(alu_srcDE), 
     .we_mem(we_memDE), 
-    .size(sizeDE), 
     .alu_control(alu_controlDE), 
     .we_reg(we_regDE),
     .instrD(instrDDE),
@@ -226,7 +229,6 @@ id_ex_pipe id_ex(
     .result_srcOUT(result_srcEX), 
     .alu_srcOUT(alu_srcEX),
     .we_memOUT(we_memEX), 
-    .sizeOUT(sizeEX), 
     .alu_controlOUT(alu_controlEX),
     .we_regOUT(we_regEX), 
     .rd1OUT(rd1EX), 
@@ -252,7 +254,6 @@ execute Exec(
     .beq(beqEX),
     .result_src(result_srcEX),
     .we_mem(we_memEX), 
-    .size(sizeEX), 
     .alu_control(alu_controlEX),
     .alu_src(alu_srcEX),
     .we_reg(we_regEX),
@@ -272,7 +273,6 @@ execute Exec(
     .pc_srcEx(pc_srcEX), // Se aplica cuando MEM libera EX
     .result_srcOUT(result_srcEX_out),
     .we_memOUT(we_memEX_out), 
-    .sizeOUT(sizeEX_out), 
     .we_regOUT(we_regEX_out), 
     .alu_result(alu_resultEX), 
     .rd2OUT(rd2EX_out), 
@@ -297,7 +297,6 @@ ex_mem_pipe ex_mem(
     .stallM(stallM),
     .result_src(result_srcEX_out),
     .we_mem(we_memEX_out), 
-    .size(sizeEX_out), 
     .we_reg(we_regEX_out), 
     .alu_result(alu_resultEX), 
     .rd2(rd2EX_out),
@@ -305,7 +304,6 @@ ex_mem_pipe ex_mem(
     .instrD(instrDEX_out), 
     .result_srcOUT(result_srcMEM), 
     .we_memOUT(we_memMEM), 
-    .sizeOUT(sizeMEM),
     .we_regOUT(we_regMEM), 
     .alu_resultOUT(alu_resultMEM),
     .rd2OUT(rd2MEM), 
@@ -317,11 +315,12 @@ ex_mem_pipe ex_mem(
 //                       MEM
 // ==========================================================
 
-memory #(.ENABLE_MMIO(ENABLE_MMIO)) Memory(
+memory #(
+    .ENABLE_MMIO(ENABLE_MMIO), .RAM_ADDR_WIDTH(RAM_ADDR_WIDTH)
+) Memory(
     .clk(clk),
     .reset(reset),
     .we_mem(we_memMEM), 
-    .size(sizeMEM),
     .we_reg(we_regMEM),
     .result_src(result_srcMEM),
     .alu_result(alu_resultMEM), 
@@ -335,7 +334,7 @@ memory #(.ENABLE_MMIO(ENABLE_MMIO)) Memory(
     .instrMOUT_hz(rdMEM),
     .we_reg_MEM_hz(we_reg_mem),
     .ex_mem(ex_mem_hz),
-    .stall_mem(stall_mem),
+    .stall_mem(stall_mem), .local_store(local_store),
     .av_address(av_address), .av_read(av_read), .av_write(av_write),
     .av_writedata(av_writedata), .av_readdata(av_readdata),
     .av_waitrequest(av_waitrequest)
