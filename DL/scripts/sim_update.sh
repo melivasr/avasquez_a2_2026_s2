@@ -21,7 +21,7 @@ set -e
 P=${1:?Falta el prefijo de los vectores (el de --vectores=)}
 shift
 LS=${*:-"1 7 10 16 32 48 64 128"}
-RTL=${RTL:-../rtl}
+RTL=${RTL:-$(dirname "$0")/../rtl/acelerador}
 
 [ -f "${P}_modo.txt" ] || { echo "ERROR: falta ${P}_modo.txt en $(pwd). Regenera los vectores con el emulador v5 (--vectores=${P})."; exit 1; }
 set -- $(cat ${P}_modo.txt)

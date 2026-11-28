@@ -14,7 +14,7 @@ set -e
 P=${1:?Falta el prefijo de los vectores (el de --vectores=)}
 shift
 LS=${*:-"7 32 48"}
-RTL=${RTL:-../rtl}
+RTL=${RTL:-$(dirname "$0")/../rtl/acelerador}
 for f in ${P}_lut.hex ${P}_x.hex ${P}_a1.hex ${P}_a2.hex ${P}_z1.hex ${P}_W1_pre.hex ${P}_b1_pre.hex; do
   if [ ! -f "$f" ]; then
     echo "ERROR: falta $f en $(pwd). Genera los vectores primero, desde sim/:"

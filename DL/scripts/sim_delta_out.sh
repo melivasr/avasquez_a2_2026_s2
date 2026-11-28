@@ -8,7 +8,7 @@
 # ============================================================
 set -e
 P=${1:?Falta el prefijo (el de --vectores=)}
-RTL=${RTL:-../rtl}
+RTL=${RTL:-$(dirname "$0")/../rtl/acelerador}
 if [ ! -f "${P}_delta.hex" ]; then
   echo "ERROR: no existe ${P}_delta.hex en $(pwd)."
   echo "Genera la traza primero, desde sim/:"

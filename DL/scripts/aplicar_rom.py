@@ -6,7 +6,7 @@ def leer(f):
     if not os.path.isfile(f): sys.exit(f"ERROR: no existe {f} (ejecuta desde DL/)")
     return open(f).read()
 
-ft = "rtl/tb_dl_bus.sv"; t = leer(ft)
+ft = "rtl/acelerador/tb_dl_bus.sv"; t = leer(ft)
 fs = "scripts/sim_dl_bus.sh"; s = leer(fs)
 if "USE_ROM" in t or "USE_ROM" in s: sys.exit("ya editado")
 

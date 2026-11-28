@@ -8,14 +8,14 @@ def leer(f):
     return open(f).read()
 
 # ---------- lane_mac.sv: bancos pequenos a MLAB ----------
-f1 = "rtl/lane_mac.sv"; s1 = leer(f1)
+f1 = "rtl/acelerador/lane_mac.sv"; s1 = leer(f1)
 if "ramstyle" in s1: sys.exit("lane_mac.sv ya tiene ramstyle")
 s1, n = re.subn(r'^([ \t]*)(logic\s[^\n;]*\b(?:bmem|dzmem|lfmem)\s*\[)',
                 r'\1(* ramstyle = "MLAB" *) \2', s1, flags=re.M)
 if n != 3: sys.exit(f"ABORTO lane_mac.sv: {n} coincidencias (esperadas 3)")
 
 # ---------- motor_dl.sv: sin multiplicadores en carga/lectura ni en f_bstep ----------
-f2 = "rtl/motor_dl.sv"; s2 = leer(f2)
+f2 = "rtl/acelerador/motor_dl.sv"; s2 = leer(f2)
 if "f_rowoff" in s2: sys.exit("motor_dl.sv ya editado")
 NUEVA = """case (l)
             2'd1: f_bstep = (P1 - 1) * 784;
